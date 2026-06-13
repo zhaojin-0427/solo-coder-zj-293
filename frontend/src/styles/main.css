@@ -697,3 +697,127 @@ textarea.form-control {
 .mt-8 { margin-top: 8px; }
 .mt-12 { margin-top: 12px; }
 .mt-16 { margin-top: 16px; }
+
+.ml-8 { margin-left: 8px; }
+.ml-12 { margin-left: 12px; }
+
+.mr-8 { margin-right: 8px; }
+
+.lens-card.care-danger {
+  border-color: var(--danger);
+  background: linear-gradient(135deg, #FEF2F2, #FFFFFF);
+}
+
+.lens-card.care-warning {
+  border-color: var(--warning);
+  background: linear-gradient(135deg, #FFFBEB, #FFFFFF);
+}
+
+.care-alert {
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  margin-top: 8px;
+}
+
+.care-alert.danger {
+  background: linear-gradient(135deg, #FEE2E2, #FECACA);
+  color: #991B1B;
+  border-left: 3px solid var(--danger);
+}
+
+.care-alert.warning {
+  background: linear-gradient(135deg, #FEF3C7, #FDE68A);
+  color: #92400E;
+  border-left: 3px solid var(--warning);
+}
+
+.care-alert.info {
+  background: linear-gradient(135deg, #DBEAFE, #BFDBFE);
+  color: #1E40AF;
+  border-left: 3px solid var(--info);
+}
+
+.reminder-item {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #F9FAFB;
+}
+
+.reminder-item.danger {
+  background: linear-gradient(135deg, #FEF2F2, #FEE2E2);
+  border-left: 3px solid var(--danger);
+}
+
+.reminder-item.warning {
+  background: linear-gradient(135deg, #FFFBEB, #FEF3C7);
+  border-left: 3px solid var(--warning);
+}
+
+.reminder-item.info {
+  background: linear-gradient(135deg, #EFF6FF, #DBEAFE);
+  border-left: 3px solid var(--info);
+}
+
+.btn-warning {
+  background: #FEF3C7;
+  color: #92400E;
+}
+
+.btn-warning:hover {
+  background: #FDE68A;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-light);
+  padding: 4px 8px;
+}
+
+.btn-ghost:hover {
+  background: #F3F4F6;
+  color: var(--text);
+}
+
+.stat-card.cyan {
+  background: linear-gradient(135deg, #CFFAFE, #ECFEFF);
+}
+
+.stat-card.cyan .stat-value {
+  color: #0E7490;
+}
+
+.stat-card.orange {
+  background: linear-gradient(135deg, #FFEDD5, #FFF7ED);
+}
+
+.stat-card.orange .stat-value {
+  color: #C2410C;
+}
+
+.stat-card.red {
+  background: linear-gradient(135deg, #FEE2E2, #FEF2F2);
+}
+
+.stat-card.red .stat-value {
+  color: var(--danger);
+}
+
+.stat-card.purple {
+  background: linear-gradient(135deg, #EDE9FE, #F5F3FF);
+}
+
+.stat-card.purple .stat-value {
+  color: var(--primary-dark);
+}
+
+.stat-card .stat-sub {
+  font-size: 12px;
+  color: var(--text-light);
+  margin-top: 4px;
+}
+
+.tag-purple {
+  background: #EDE9FE;
+  color: var(--primary-dark);
+}

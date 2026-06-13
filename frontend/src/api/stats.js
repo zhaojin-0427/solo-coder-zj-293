@@ -42,3 +42,17 @@ export function getEyeTips() {
     method: 'get'
   })
 }
+
+export function getCareStats() {
+  return request({
+    url: '/stats/care_stats/',
+    method: 'get'
+  })
+}
+
+export function getCareMethodComfort() {
+  return request({
+    url: '/stats/care_method_comfort/',
+    method: 'get'
+  })
+}

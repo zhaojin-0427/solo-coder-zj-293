@@ -1,12 +1,154 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from django.db.models import Sum, Avg, Count, Q
+from django.db.models import Sum, Avg, Count, Q, Case, When, IntegerField, F
 from django.utils import timezone
 from datetime import timedelta
 
-from .models import Lens, WearRecord
-from .serializers import LensSerializer, WearRecordSerializer
+from .models import Lens, WearRecord, CareRecord, CareReminder
+from .serializers import (
+    LensSerializer, WearRecordSerializer,
+    CareRecordSerializer, CareReminderSerializer
+)
+
+
+def generate_reminders_from_record(record):
+    if not record.lens:
+        return []
+
+    lens = record.lens
+    today = record.wear_date
+    reminders = []
+
+    today_records = WearRecord.objects.filter(lens=lens, wear_date=today)
+    total_hours_today = sum(r.duration_hours for r in today_records)
+
+    lens_daily_limit = lens.daily_wear_limit()
+    if total_hours_today >= 12:
+        reminders.append({
+            'lens': lens,
+            'reminder_type': 'risk',
+            'severity': 'danger',
+            'title': '单日佩戴严重超时',
+            'message': f'今日已佩戴 {total_hours_today:.1f} 小时，远超建议上限（{lens_daily_limit}h）。建议立即取下镜片，让眼睛充分休息，至少间隔24小时再佩戴。',
+            'target_date': today,
+            'triggered_by_record': record,
+        })
+    elif total_hours_today >= lens_daily_limit + 2:
+        reminders.append({
+            'lens': lens,
+            'reminder_type': 'risk',
+            'severity': 'warning',
+            'title': '单日佩戴时长偏长',
+            'message': f'今日已佩戴 {total_hours_today:.1f} 小时，超过建议上限（{lens_daily_limit}h）。建议取下镜片休息，明日减少佩戴时长。',
+            'target_date': today,
+            'triggered_by_record': record,
+        })
+
+    if record.comfort_level <= 2:
+        reminders.append({
+            'lens': lens,
+            'reminder_type': 'risk',
+            'severity': 'warning',
+            'title': '舒适度偏低',
+            'message': f'本次佩戴舒适度仅 {record.comfort_level} 分（满分5分）。建议检查镜片是否有破损、沉淀物，或考虑更换护理液/镜片品牌。如持续不适请停戴并就医。',
+            'target_date': today,
+            'triggered_by_record': record,
+        })
+
+    if record.comfort_level <= 1:
+        reminders.append({
+            'lens': lens,
+            'reminder_type': 'rest',
+            'severity': 'danger',
+            'title': '强烈建议停戴观察',
+            'message': '舒适度极低，建议立即停戴此镜片至少3天。如停戴后仍有不适，请及时前往眼科就诊。',
+            'target_date': today + timedelta(days=3),
+            'triggered_by_record': record,
+        })
+
+    bad_reactions = ['redness', 'dryness_redness', 'redness_fatigue', 'all']
+    if record.eye_reaction in bad_reactions:
+        reminders.append({
+            'lens': lens,
+            'reminder_type': 'rest',
+            'severity': 'danger',
+            'title': '眼部出现充血，建议停戴',
+            'message': '本次佩戴出现眼部红血丝反应，建议停戴此镜片至少2天。可使用人工泪液缓解，如症状未消退请及时就医。',
+            'target_date': today + timedelta(days=2),
+            'triggered_by_record': record,
+        })
+
+    moderate_reactions = ['dryness', 'fatigue', 'dryness_fatigue']
+    if record.eye_reaction in moderate_reactions:
+        reminders.append({
+            'lens': lens,
+            'reminder_type': 'care',
+            'severity': 'warning',
+            'title': '眼部有轻度不适',
+            'message': '本次佩戴出现干涩/视疲劳，建议加强镜片护理，可考虑深度清洁或更换护理液。明日减少佩戴时长。',
+            'target_date': today,
+            'triggered_by_record': record,
+        })
+
+    if lens.open_date:
+        days_open = (today - lens.open_date).days
+        if lens.replacement_days_after_open and days_open >= lens.replacement_days_after_open:
+            reminders.append({
+                'lens': lens,
+                'reminder_type': 'replacement',
+                'severity': 'danger',
+                'title': '镜片已超过建议更换周期',
+                'message': f'此镜片已开封 {days_open} 天，超过建议更换周期（{lens.replacement_days_after_open}天）。为了眼部健康，请立即更换新镜片。',
+                'target_date': lens.open_date + timedelta(days=lens.replacement_days_after_open),
+                'triggered_by_record': record,
+            })
+        elif lens.replacement_days_after_open and days_open >= lens.replacement_days_after_open - 3:
+            reminders.append({
+                'lens': lens,
+                'reminder_type': 'replacement',
+                'severity': 'warning',
+                'title': '镜片即将达到更换周期',
+                'message': f'此镜片已开封 {days_open} 天，距离建议更换周期（{lens.replacement_days_after_open}天）仅剩 {lens.replacement_days_after_open - days_open} 天，请提前准备新镜片。',
+                'target_date': lens.open_date + timedelta(days=lens.replacement_days_after_open),
+                'triggered_by_record': record,
+            })
+
+    if lens.next_care_date and today >= lens.next_care_date:
+        reminders.append({
+            'lens': lens,
+            'reminder_type': 'care',
+            'severity': 'warning',
+            'title': '请及时护理镜片',
+            'message': f'已到达计划护理日期（{lens.next_care_date.isoformat()}），请对镜片进行清洁护理，并更新下次护理日期。',
+            'target_date': lens.next_care_date,
+            'triggered_by_record': record,
+        })
+
+    if lens.next_checkup_date and today >= lens.next_checkup_date:
+        reminders.append({
+            'lens': lens,
+            'reminder_type': 'checkup',
+            'severity': 'warning',
+            'title': '请及时进行眼科复查',
+            'message': f'已到达计划复查日期（{lens.next_checkup_date.isoformat()}），请预约眼科医生进行眼部健康检查。',
+            'target_date': lens.next_checkup_date,
+            'triggered_by_record': record,
+        })
+
+    created_reminders = []
+    for rem_data in reminders:
+        exists = CareReminder.objects.filter(
+            lens=rem_data['lens'],
+            reminder_type=rem_data['reminder_type'],
+            title=rem_data['title'],
+            created_at__date=today
+        ).exists()
+        if not exists:
+            reminder = CareReminder.objects.create(**rem_data)
+            created_reminders.append(reminder)
+
+    return created_reminders
 
 
 class LensViewSet(viewsets.ModelViewSet):
@@ -18,26 +160,29 @@ class LensViewSet(viewsets.ModelViewSet):
         status_filter = self.request.query_params.get('status')
         purpose_filter = self.request.query_params.get('purpose')
         brand_filter = self.request.query_params.get('brand')
+        care_status_filter = self.request.query_params.get('care_status')
         if status_filter:
             qs = qs.filter(status=status_filter)
         if purpose_filter:
             qs = qs.filter(purpose=purpose_filter)
         if brand_filter:
             qs = qs.filter(brand__icontains=brand_filter)
+        if care_status_filter:
+            today = timezone.now().date()
+            if care_status_filter == 'rest':
+                qs = qs.filter(need_rest_observation=True)
+            elif care_status_filter == 'overdue':
+                qs = qs.filter(
+                    Q(next_care_date__lt=today) | Q(next_checkup_date__lt=today)
+                )
+            elif care_status_filter == 'soon':
+                future_3 = today + timedelta(days=3)
+                future_7 = today + timedelta(days=7)
+                qs = qs.filter(
+                    Q(next_care_date__lte=future_3, next_care_date__gte=today) |
+                    Q(next_checkup_date__lte=future_7, next_checkup_date__gte=today)
+                )
         return qs
-
-    def get_serializer_context(self):
-        context = super().get_serializer_context()
-        today = timezone.now().date()
-        for obj in self.queryset:
-            records = WearRecord.objects.filter(lens=obj)
-            total_hours = records.aggregate(Sum('duration_hours'))['duration_hours__sum'] or 0
-            last_wear = records.order_by('-wear_date').first()
-            avg_comfort = records.aggregate(Avg('comfort_level'))['comfort_level__avg']
-            obj.total_wear_hours = round(total_hours, 1)
-            obj.last_wear_date = last_wear.wear_date if last_wear else None
-            obj.avg_comfort = round(avg_comfort, 1) if avg_comfort else None
-        return context
 
     @action(detail=False, methods=['get'])
     def expiring(self, request):
@@ -81,6 +226,18 @@ class LensViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(unused_lenses, many=True)
         return Response(serializer.data)
 
+    @action(detail=False, methods=['get'])
+    def care_warnings(self, request):
+        today = timezone.now().date()
+        lenses = Lens.objects.exclude(status__in=['used_up', 'expired'])
+        result = []
+        for lens in lenses:
+            care_status = lens.get_care_status()
+            if care_status != 'normal':
+                result.append(lens)
+        serializer = self.get_serializer(result, many=True)
+        return Response(serializer.data)
+
     @action(detail=True, methods=['post'])
     def open(self, request, pk=None):
         lens = self.get_object()
@@ -96,6 +253,94 @@ class LensViewSet(viewsets.ModelViewSet):
         lens.status = 'used_up'
         lens.save()
         return Response({'status': 'used_up'})
+
+    @action(detail=True, methods=['post'])
+    def mark_care_done(self, request, pk=None):
+        lens = self.get_object()
+        notes = request.data.get('notes', '')
+        next_date = request.data.get('next_care_date')
+        CareRecord.objects.create(
+            lens=lens,
+            care_type='routine',
+            care_date=timezone.now().date(),
+            notes=notes
+        )
+        if next_date:
+            lens.next_care_date = next_date
+        else:
+            lens.next_care_date = timezone.now().date() + timedelta(days=7)
+        lens.save()
+        return Response({'status': 'success', 'next_care_date': lens.next_care_date.isoformat()})
+
+    @action(detail=True, methods=['post'])
+    def mark_checkup_done(self, request, pk=None):
+        lens = self.get_object()
+        notes = request.data.get('notes', '')
+        next_date = request.data.get('next_checkup_date')
+        CareRecord.objects.create(
+            lens=lens,
+            care_type='checkup',
+            care_date=timezone.now().date(),
+            notes=notes
+        )
+        if next_date:
+            lens.next_checkup_date = next_date
+        else:
+            lens.next_checkup_date = timezone.now().date() + timedelta(days=180)
+        lens.save()
+        return Response({'status': 'success', 'next_checkup_date': lens.next_checkup_date.isoformat()})
+
+    @action(detail=True, methods=['post'])
+    def start_rest(self, request, pk=None):
+        lens = self.get_object()
+        days = int(request.data.get('days', 3))
+        notes = request.data.get('notes', '')
+        lens.need_rest_observation = True
+        lens.rest_until_date = timezone.now().date() + timedelta(days=days)
+        lens.save()
+        CareRecord.objects.create(
+            lens=lens,
+            care_type='rest_start',
+            care_date=timezone.now().date(),
+            notes=notes or f'建议停戴 {days} 天'
+        )
+        return Response({
+            'status': 'rest_started',
+            'rest_until_date': lens.rest_until_date.isoformat()
+        })
+
+    @action(detail=True, methods=['post'])
+    def end_rest(self, request, pk=None):
+        lens = self.get_object()
+        notes = request.data.get('notes', '')
+        lens.need_rest_observation = False
+        lens.rest_until_date = None
+        lens.save()
+        CareRecord.objects.create(
+            lens=lens,
+            care_type='rest_end',
+            care_date=timezone.now().date(),
+            notes=notes or '停戴观察结束'
+        )
+        return Response({'status': 'rest_ended'})
+
+    @action(detail=True, methods=['get'])
+    def care_records(self, request, pk=None):
+        lens = self.get_object()
+        records = lens.care_records.all()
+        serializer = CareRecordSerializer(records, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['get'])
+    def reminders(self, request, pk=None):
+        lens = self.get_object()
+        include_dismissed = request.query_params.get('include_dismissed', 'false') == 'true'
+        if include_dismissed:
+            reminders = lens.reminders.all()
+        else:
+            reminders = lens.reminders.filter(is_dismissed=False)
+        serializer = CareReminderSerializer(reminders, many=True)
+        return Response(serializer.data)
 
 
 class WearRecordViewSet(viewsets.ModelViewSet):
@@ -114,6 +359,27 @@ class WearRecordViewSet(viewsets.ModelViewSet):
         if date_to:
             qs = qs.filter(wear_date__lte=date_to)
         return qs
+
+    def create(self, request, *args, **kwargs):
+        response = super().create(request, *args, **kwargs)
+        if response.status_code == 201:
+            record = WearRecord.objects.get(pk=response.data['id'])
+            reminders = generate_reminders_from_record(record)
+            reminder_serializer = CareReminderSerializer(reminders, many=True)
+            response.data['generated_reminders'] = reminder_serializer.data
+        return response
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        reminders = generate_reminders_from_record(instance)
+        reminder_serializer = CareReminderSerializer(reminders, many=True)
+        data = serializer.data
+        data['generated_reminders'] = reminder_serializer.data
+        return Response(data)
 
     @action(detail=False, methods=['get'])
     def daily_totals(self, request):
@@ -169,6 +435,79 @@ class WearRecordViewSet(viewsets.ModelViewSet):
         })
 
 
+class CareRecordViewSet(viewsets.ModelViewSet):
+    queryset = CareRecord.objects.all()
+    serializer_class = CareRecordSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        lens_id = self.request.query_params.get('lens_id')
+        care_type = self.request.query_params.get('care_type')
+        if lens_id:
+            qs = qs.filter(lens_id=lens_id)
+        if care_type:
+            qs = qs.filter(care_type=care_type)
+        return qs
+
+
+class CareReminderViewSet(viewsets.ModelViewSet):
+    queryset = CareReminder.objects.all()
+    serializer_class = CareReminderSerializer
+    http_method_names = ['get', 'post', 'patch', 'head', 'options']
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        lens_id = self.request.query_params.get('lens_id')
+        reminder_type = self.request.query_params.get('reminder_type')
+        severity = self.request.query_params.get('severity')
+        include_dismissed = self.request.query_params.get('include_dismissed', 'false') == 'true'
+        if lens_id:
+            qs = qs.filter(lens_id=lens_id)
+        if reminder_type:
+            qs = qs.filter(reminder_type=reminder_type)
+        if severity:
+            qs = qs.filter(severity=severity)
+        if not include_dismissed:
+            qs = qs.filter(is_dismissed=False)
+        return qs
+
+    @action(detail=True, methods=['post'])
+    def mark_read(self, request, pk=None):
+        reminder = self.get_object()
+        reminder.is_read = True
+        reminder.save()
+        return Response({'status': 'read'})
+
+    @action(detail=True, methods=['post'])
+    def dismiss(self, request, pk=None):
+        reminder = self.get_object()
+        reminder.is_dismissed = True
+        reminder.save()
+        return Response({'status': 'dismissed'})
+
+    @action(detail=False, methods=['post'])
+    def mark_all_read(self, request):
+        CareReminder.objects.filter(is_read=False).update(is_read=True)
+        return Response({'status': 'all_read'})
+
+    @action(detail=False, methods=['get'])
+    def active(self, request):
+        today = timezone.now().date()
+        reminders = CareReminder.objects.filter(is_dismissed=False).order_by('-severity', '-created_at')
+        serializer = self.get_serializer(reminders, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['post'])
+    def generate_all(self, request):
+        all_reminders = []
+        records = WearRecord.objects.filter(wear_date=timezone.now().date())
+        for record in records:
+            r = generate_reminders_from_record(record)
+            all_reminders.extend(r)
+        serializer = self.get_serializer(all_reminders, many=True)
+        return Response({'count': len(all_reminders), 'reminders': serializer.data})
+
+
 class StatsViewSet(viewsets.ViewSet):
 
     @action(detail=False, methods=['get'])
@@ -184,6 +523,18 @@ class StatsViewSet(viewsets.ViewSet):
             expiry_date__gte=today
         ).exclude(status='used_up').count()
         expired_count = Lens.objects.filter(expiry_date__lt=today).exclude(status='expired').count()
+
+        active_lenses_qs = Lens.objects.exclude(status__in=['used_up', 'expired'])
+        care_overdue = active_lenses_qs.filter(
+            Q(next_care_date__lt=today) | Q(next_checkup_date__lt=today)
+        ).count()
+        care_soon = active_lenses_qs.filter(
+            Q(next_care_date__lte=today + timedelta(days=3), next_care_date__gte=today) |
+            Q(next_checkup_date__lte=today + timedelta(days=7), next_checkup_date__gte=today)
+        ).count()
+        rest_count = active_lenses_qs.filter(need_rest_observation=True).count()
+        checkup_overdue = active_lenses_qs.filter(next_checkup_date__lt=today).count()
+
         return Response({
             'total_lenses': total_lenses,
             'active_lenses': active_lenses,
@@ -192,7 +543,101 @@ class StatsViewSet(viewsets.ViewSet):
             'avg_comfort': round(avg_comfort, 1),
             'expiring_count': expiring_count,
             'expired_count': expired_count,
+            'care_overdue_count': care_overdue,
+            'care_soon_count': care_soon,
+            'rest_count': rest_count,
+            'checkup_overdue_count': checkup_overdue,
         })
+
+    @action(detail=False, methods=['get'])
+    def care_stats(self, request):
+        today = timezone.now().date()
+        total_care_records = CareRecord.objects.count()
+        routine_count = CareRecord.objects.filter(care_type='routine').count()
+        checkup_count = CareRecord.objects.filter(care_type='checkup').count()
+        rest_count = CareRecord.objects.filter(care_type__in=['rest_start', 'rest_end']).count()
+
+        active_lenses = Lens.objects.exclude(status__in=['used_up', 'expired'])
+        with_care_plan = active_lenses.filter(next_care_date__isnull=False).count()
+        lenses_with_checkup = active_lenses.filter(next_checkup_date__isnull=False).count()
+
+        recent_30 = today - timedelta(days=30)
+        care_in_30 = CareRecord.objects.filter(
+            care_type__in=['routine', 'deep_clean'],
+            care_date__gte=recent_30
+        ).count()
+
+        planned_care_30 = active_lenses.filter(next_care_date__isnull=False).count()
+        care_execution_rate = 0
+        if planned_care_30 > 0:
+            potential_cares = planned_care_30 * 4
+            care_execution_rate = round(min(100, care_in_30 / max(potential_cares, 1) * 100), 1)
+
+        checkup_overdue = active_lenses.filter(next_checkup_date__lt=today).count()
+        checkup_coming = active_lenses.filter(
+            next_checkup_date__gte=today,
+            next_checkup_date__lte=today + timedelta(days=30)
+        ).count()
+
+        reminder_total = CareReminder.objects.count()
+        reminder_dismissed = CareReminder.objects.filter(is_dismissed=True).count()
+
+        care_type_stats = dict(CareRecord.objects.values_list('care_type').annotate(count=Count('id')))
+        reminder_type_stats = dict(CareReminder.objects.values_list('reminder_type').annotate(count=Count('id')))
+
+        return Response({
+            'total_care_records': total_care_records,
+            'total_care_records_30d': care_in_30,
+            'routine_care_count': routine_count,
+            'checkup_count': checkup_count,
+            'rest_record_count': rest_count,
+            'lenses_with_care_plan': with_care_plan,
+            'lenses_with_checkup_plan': lenses_with_checkup,
+            'care_in_last_30_days': care_in_30,
+            'care_execution_rate': care_execution_rate,
+            'checkup_overdue_count': checkup_overdue,
+            'checkup_coming_30_days': checkup_coming,
+            'total_reminders': reminder_total,
+            'dismissed_reminders': reminder_dismissed,
+            'active_reminders': reminder_total - reminder_dismissed,
+            'care_type_stats': care_type_stats,
+            'reminder_type_stats': reminder_type_stats,
+        })
+
+    @action(detail=False, methods=['get'])
+    def care_method_comfort(self, request):
+        methods = ['hydrogen_peroxide', 'multi_purpose', 'daily_disposable', 'other']
+        method_labels = {
+            'hydrogen_peroxide': '双氧水护理',
+            'multi_purpose': '多功能护理液',
+            'daily_disposable': '日抛无需护理',
+            'other': '其他方式',
+        }
+        result = []
+        for method in methods:
+            lenses = Lens.objects.filter(care_method=method)
+            records = WearRecord.objects.filter(lens__in=lenses)
+            total_records = records.count()
+            if total_records == 0:
+                continue
+            avg_comfort = records.aggregate(Avg('comfort_level'))['comfort_level__avg'] or 0
+            total_hours = records.aggregate(Sum('duration_hours'))['duration_hours__sum'] or 0
+            reactions_qs = records.values('eye_reaction').annotate(count=Count('id'))
+            reactions = [{'eye_reaction': r['eye_reaction'], 'count': r['count']} for r in reactions_qs]
+            bad_reaction_count = records.exclude(eye_reaction='none').count()
+            bad_rate = round(bad_reaction_count / total_records * 100, 1)
+            result.append({
+                'care_method': method,
+                'care_method_display': method_labels.get(method, method),
+                'lens_count': lenses.count(),
+                'total_records': total_records,
+                'avg_comfort': round(avg_comfort, 2),
+                'total_hours': round(total_hours, 1),
+                'bad_reaction_rate': bad_rate,
+                'reactions': reactions,
+            })
+        result.sort(key=lambda x: x['avg_comfort'], reverse=True)
+        return Response(result)
 
     @action(detail=False, methods=['get'])
     def brand_comfort(self, request):

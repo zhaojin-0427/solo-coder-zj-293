@@ -40,15 +40,167 @@
         <div class="stat-label">🔔 长期未使用(>{{ unusedDays }}天)</div>
         <div class="stat-value" style="color: #2563EB;">{{ unusedLenses.length }} 副</div>
       </div>
+      <div class="stat-card" style="background: linear-gradient(135deg, #FCE7F3, #FBCFE8);">
+        <div class="stat-label">🛑 停戴观察中</div>
+        <div class="stat-value" style="color: #DB2777;">{{ restLenses.length }} 副</div>
+      </div>
+      <div class="stat-card" style="background: linear-gradient(135deg, #FEE2E2, #FECACA);">
+        <div class="stat-label">🔴 护理/复查逾期</div>
+        <div class="stat-value" style="color: #DC2626;">{{ careOverdueLenses.length }} 副</div>
+      </div>
+      <div class="stat-card" style="background: linear-gradient(135deg, #FEF3C7, #FDE68A);">
+        <div class="stat-label">🟡 即将护理/复查</div>
+        <div class="stat-value" style="color: #D97706;">{{ careSoonLenses.length }} 副</div>
+      </div>
       <div class="stat-card green">
         <div class="stat-label">✅ 状态正常</div>
         <div class="stat-value small">{{ normalCount }} 副</div>
       </div>
     </div>
 
+    <div class="card mb-20" v-if="careOverdueLenses.length">
+      <div class="card-title" style="color: var(--danger);">
+        🔴 护理/复查逾期镜片
+      </div>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>镜片</th>
+            <th>问题</th>
+            <th>详情</th>
+            <th>参数</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="lens in careOverdueLenses" :key="lens.id">
+            <td>
+              <div class="text-bold">{{ lens.brand }} {{ lens.model_name }}</div>
+              <span class="tag mt-8" :class="STATUS_MAP[lens.status]?.class">{{ STATUS_MAP[lens.status]?.label }}</span>
+            </td>
+            <td>
+              <span class="tag tag-red">
+                {{ CARE_STATUS_MAP[lens.care_status]?.icon }}
+                {{ CARE_STATUS_MAP[lens.care_status]?.label }}
+              </span>
+            </td>
+            <td class="text-sm">
+              <div v-if="lens.days_until_replacement != null && lens.days_until_replacement < 0">
+                更换周期已逾期 {{ Math.abs(lens.days_until_replacement) }} 天
+              </div>
+              <div v-if="lens.next_care_date && lens.days_until_next_care != null && lens.days_until_next_care < 0">
+                护理计划: {{ formatDate(lens.next_care_date) }}（逾期 {{ Math.abs(lens.days_until_next_care) }} 天）
+              </div>
+              <div v-if="lens.next_checkup_date && lens.days_until_next_checkup != null && lens.days_until_next_checkup < 0">
+                复查计划: {{ formatDate(lens.next_checkup_date) }}（逾期 {{ Math.abs(lens.days_until_next_checkup) }} 天）
+              </div>
+            </td>
+            <td class="text-sm">{{ lens.power_sph }}D · {{ lens.water_content }}% · BC{{ lens.base_curve }}</td>
+            <td>
+              <router-link :to="'/lenses'" class="btn btn-link btn-sm">去处理</router-link>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card mb-20" v-if="careSoonLenses.length">
+      <div class="card-title" style="color: var(--warning);">
+        🟡 即将需要护理/复查（7天内）
+      </div>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>镜片</th>
+            <th>类型</th>
+            <th>日期</th>
+            <th>剩余天数</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="lens in careSoonLenses" :key="lens.id">
+            <td>
+              <div class="text-bold">{{ lens.brand }} {{ lens.model_name }}</div>
+              <div class="text-xs text-light">{{ lens.power_sph }}D</div>
+            </td>
+            <td>
+              <span class="tag tag-yellow">
+                {{ CARE_STATUS_MAP[lens.care_status]?.icon }}
+                {{ CARE_STATUS_MAP[lens.care_status]?.label }}
+              </span>
+            </td>
+            <td>
+              <span v-if="lens.care_status === 'replace_soon' && lens.replacement_days_after_open && lens.open_date">
+                {{ formatDate(addDays(lens.open_date, lens.replacement_days_after_open)) }}
+              </span>
+              <span v-else-if="lens.care_status === 'care_soon'">{{ formatDate(lens.next_care_date) }}</span>
+              <span v-else-if="lens.care_status === 'checkup_soon'">{{ formatDate(lens.next_checkup_date) }}</span>
+            </td>
+            <td>
+              <span class="tag tag-yellow">
+                <span v-if="lens.days_until_replacement != null && lens.days_until_replacement >= 0">
+                  更换还剩 {{ lens.days_until_replacement }} 天
+                </span>
+                <span v-else-if="lens.days_until_next_care != null && lens.days_until_next_care >= 0">
+                  护理还剩 {{ lens.days_until_next_care }} 天
+                </span>
+                <span v-else-if="lens.days_until_next_checkup != null && lens.days_until_next_checkup >= 0">
+                  复查还剩 {{ lens.days_until_next_checkup }} 天
+                </span>
+              </span>
+            </td>
+            <td>
+              <router-link :to="'/lenses'" class="btn btn-link btn-sm">去处理</router-link>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card mb-20" v-if="restLenses.length">
+      <div class="card-title" style="color: #DB2777;">
+        � 停戴观察中的镜片
+      </div>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>镜片</th>
+            <th>参数</th>
+            <th>停戴至</th>
+            <th>剩余天数</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="lens in restLenses" :key="lens.id">
+            <td>
+              <div class="text-bold">{{ lens.brand }} {{ lens.model_name }}</div>
+              <div class="text-xs text-light">{{ lens.color || '-' }}</div>
+            </td>
+            <td>{{ lens.power_sph }}D · {{ lens.water_content }}%</td>
+            <td>
+              <span class="text-danger text-bold">{{ formatDate(lens.rest_until_date) || '未设置' }}</span>
+            </td>
+            <td>
+              <span class="tag tag-red">
+                <span v-if="lens.rest_until_date">
+                  还剩 {{ Math.max(0, daysBetween(new Date(), new Date(lens.rest_until_date))) }} 天
+                </span>
+                <span v-else>无期限</span>
+              </span>
+            </td>
+            <td>
+              <router-link :to="'/lenses'" class="btn btn-link btn-sm">去处理</router-link>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
     <div class="card mb-20" v-if="expiredLenses.length">
       <div class="card-title" style="color: var(--danger);">
-        🚨 已过期镜片（请立即停止使用）
+        �🚨 已过期镜片（请立即停止使用）
       </div>
       <div class="lens-grid">
         <div v-for="lens in expiredLenses" :key="lens.id" class="lens-card expired">
@@ -60,6 +212,10 @@
                 <span class="tag tag-red">已过期 {{ Math.abs(lens.days_until_expiry) }} 天</span>
                 <span class="tag ml-8" :class="STATUS_MAP[lens.status]?.class">
                   {{ STATUS_MAP[lens.status]?.label }}
+                </span>
+                <span v-if="lens.care_status && lens.care_status !== 'normal'"
+                      class="tag ml-8" :class="CARE_STATUS_MAP[lens.care_status]?.class">
+                  {{ CARE_STATUS_MAP[lens.care_status]?.icon }}
                 </span>
               </div>
             </div>
@@ -95,7 +251,9 @@
         ⚠️ {{ warningDays }}天内即将过期（建议尽快使用）
       </div>
       <div class="lens-grid">
-        <div v-for="lens in soonLenses" :key="lens.id" class="lens-card expiring">
+        <div v-for="lens in soonLenses" :key="lens.id"
+             class="lens-card"
+             :class="{ expiring: true, 'care-warning': lens.care_status && lens.care_status !== 'normal' && lens.care_status !== 'rest' }">
           <div class="lens-header">
             <div>
               <div class="lens-brand">{{ lens.brand }}</div>
@@ -104,6 +262,9 @@
                 <span class="tag tag-yellow">剩 {{ lens.days_until_expiry }} 天</span>
                 <span class="tag ml-8" :class="PURPOSE_MAP[lens.purpose]?.class">
                   {{ PURPOSE_MAP[lens.purpose]?.icon }} {{ PURPOSE_MAP[lens.purpose]?.label }}
+                </span>
+                <span v-if="lens.care_method" class="tag ml-8" :class="CARE_METHOD_MAP[lens.care_method]?.class">
+                  {{ CARE_METHOD_MAP[lens.care_method]?.label }}
                 </span>
               </div>
             </div>
@@ -134,6 +295,11 @@
               <div class="spec-value">{{ lens.total_wear_hours || 0 }}h</div>
             </div>
           </div>
+          <div v-if="lens.care_status && lens.care_status !== 'normal'"
+               class="care-alert"
+               :class="lens.care_status === 'rest' || lens.care_status.includes('overdue') ? 'danger' : 'warning'">
+            {{ CARE_STATUS_MAP[lens.care_status]?.icon }} {{ CARE_STATUS_MAP[lens.care_status]?.label }}
+          </div>
           <div class="lens-footer">
             <div class="text-sm text-light">建议日戴≤{{ lens.daily_wear_limit }}h</div>
             <div class="lens-actions">
@@ -156,6 +322,7 @@
             <th>参数</th>
             <th>上次佩戴</th>
             <th>未使用天数</th>
+            <th>护理状态</th>
             <th>有效期至</th>
             <th>操作</th>
           </tr>
@@ -173,6 +340,13 @@
             <td>
               <span class="tag tag-blue">超过 {{ getUnusedDays(lens) }} 天</span>
             </td>
+            <td>
+              <span v-if="lens.care_status && lens.care_status !== 'normal'"
+                    class="tag" :class="CARE_STATUS_MAP[lens.care_status]?.class">
+                {{ CARE_STATUS_MAP[lens.care_status]?.icon }} {{ CARE_STATUS_MAP[lens.care_status]?.label }}
+              </span>
+              <span v-else class="tag tag-green">✅ 正常</span>
+            </td>
             <td :class="lens.is_expired ? 'text-danger' : ''">
               {{ formatDate(lens.expiry_date) }}
             </td>
@@ -184,7 +358,7 @@
       </table>
     </div>
 
-    <div class="card" v-if="!expiredLenses.length && !soonLenses.length && !unusedLenses.length">
+    <div class="card" v-if="!expiredLenses.length && !soonLenses.length && !unusedLenses.length && !careOverdueLenses.length && !careSoonLenses.length && !restLenses.length">
       <div class="empty-state">
         <div class="empty-icon">🎉</div>
         <h3>太棒了！暂无任何预警</h3>
@@ -195,12 +369,14 @@
     <div class="alert alert-info mt-20">
       <div class="alert-icon">💡</div>
       <div class="alert-content">
-        <div class="alert-title">镜片保存小贴士</div>
+        <div class="alert-title">镜片保存与护理小贴士</div>
         <div class="alert-message" style="font-size: 13px; line-height: 1.8;">
           • 镜片应保存在阴凉干燥处，避免阳光直射<br>
           • 护理液开封后一般3个月内用完，注意护理液自身有效期<br>
           • 即使未过期，开封后也建议按产品说明周期更换（如月抛30天内）<br>
-          • 佩戴前请检查镜片是否有破损、沉淀物
+          • 佩戴前请检查镜片是否有破损、沉淀物<br>
+          • 建议每半年进行一次眼科复查，确保眼部健康<br>
+          • 如出现持续红血丝、疼痛、视力模糊等症状，请立即停戴并就医
         </div>
       </div>
     </div>
@@ -210,13 +386,21 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { getExpiringLenses, getUnusedLenses, getLensList, openLens, updateLens } from '@/api/lens'
-import { STATUS_MAP, PURPOSE_MAP, formatDate } from '@/utils/constants'
+import {
+  STATUS_MAP, PURPOSE_MAP, CARE_STATUS_MAP, CARE_METHOD_MAP, formatDate, daysBetween
+} from '@/utils/constants'
 
 const allExpiring = ref([])
 const unusedLenses = ref([])
 const allLenses = ref([])
 const warningDays = ref(30)
 const unusedDays = ref(30)
+
+const addDays = (dateStr, days) => {
+  const d = new Date(dateStr)
+  d.setDate(d.getDate() + days)
+  return d
+}
 
 const expiredLenses = computed(() => {
   return allExpiring.value.filter(l => l.is_expired || l.days_until_expiry < 0)
@@ -226,17 +410,36 @@ const soonLenses = computed(() => {
   return allExpiring.value.filter(l => !l.is_expired && l.days_until_expiry >= 0 && l.days_until_expiry <= warningDays.value)
 })
 
+const careOverdueLenses = computed(() => {
+  return allLenses.value.filter(l =>
+    ['replace_overdue', 'care_overdue', 'checkup_overdue'].includes(l.care_status)
+  )
+})
+
+const careSoonLenses = computed(() => {
+  return allLenses.value.filter(l =>
+    ['replace_soon', 'care_soon', 'checkup_soon'].includes(l.care_status)
+  )
+})
+
+const restLenses = computed(() => {
+  return allLenses.value.filter(l => l.care_status === 'rest')
+})
+
 const normalCount = computed(() => {
   const today = new Date()
   const threshold = new Date(today.getTime() + warningDays.value * 86400000)
   return allLenses.value.filter(l => {
     const exp = new Date(l.expiry_date)
-    return exp > threshold && l.status !== 'used_up' && l.status !== 'expired'
+    return exp > threshold
+      && l.status !== 'used_up'
+      && l.status !== 'expired'
+      && l.care_status === 'normal'
   }).length
 })
 
 const getUnusedDays = (lens) => {
-  const refDate = lens.last_wear_date ? new Date(lens.last_wear_date) : new Date(l.created_at)
+  const refDate = lens.last_wear_date ? new Date(lens.last_wear_date) : new Date(lens.created_at)
   return Math.floor((Date.now() - refDate.getTime()) / 86400000)
 }
 

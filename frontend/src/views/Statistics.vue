@@ -23,6 +23,29 @@
       </div>
     </div>
 
+    <div class="stats-grid" style="margin-top: 0;">
+      <div class="stat-card cyan">
+        <div class="stat-label">护理执行率</div>
+        <div class="stat-value small">{{ careStats.care_execution_rate || 0 }}%</div>
+        <div class="stat-sub">近30天 {{ careStats.total_care_records_30d || 0 }} 次护理</div>
+      </div>
+      <div class="stat-card orange">
+        <div class="stat-label">复查逾期</div>
+        <div class="stat-value">{{ overview.checkup_overdue_count || 0 }}</div>
+        <div class="stat-sub">需尽快安排眼科检查</div>
+      </div>
+      <div class="stat-card red">
+        <div class="stat-label">护理逾期</div>
+        <div class="stat-value">{{ overview.care_overdue_count || 0 }}</div>
+        <div class="stat-sub">镜片需立即护理</div>
+      </div>
+      <div class="stat-card purple">
+        <div class="stat-label">停戴观察中</div>
+        <div class="stat-value">{{ overview.rest_count || 0 }}</div>
+        <div class="stat-sub">即将到期: {{ overview.care_soon_count || 0 }} 副</div>
+      </div>
+    </div>
+
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
       <div class="card">
         <div class="card-title">🏆 品牌舒适度排行榜</div>
@@ -34,6 +57,17 @@
       </div>
 
       <div class="card">
+        <div class="card-title">🧴 护理方式舒适度对比</div>
+        <div v-if="careMethodComfort.length" class="chart-container small" ref="careMethodChartRef"></div>
+        <div v-else class="empty-state" style="padding: 40px;">
+          <div class="empty-icon">🧴</div>
+          <p>暂无护理方式数据</p>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+      <div class="card">
         <div class="card-title">💧 含水量适配度分析</div>
         <div v-if="waterStats.length" class="chart-container small" ref="waterChartRef"></div>
         <div v-else class="empty-state" style="padding: 40px;">
@@ -41,9 +75,7 @@
           <p>暂无数据</p>
         </div>
       </div>
-    </div>
 
-    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
       <div class="card">
         <div class="card-title">🎯 用途分布统计</div>
         <div v-if="purposeStats.length" class="chart-container small" ref="purposeChartRef"></div>
@@ -52,13 +84,24 @@
           <p>暂无数据</p>
         </div>
       </div>
+    </div>
 
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
       <div class="card">
         <div class="card-title">⏱️ 累计佩戴时长分布（按镜片）</div>
         <div v-if="lensHoursList.length" class="chart-container small" ref="hoursPieRef"></div>
         <div v-else class="empty-state" style="padding: 40px;">
           <div class="empty-icon">⏱️</div>
           <p>暂无数据</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">🔔 护理与风险提醒统计</div>
+        <div v-if="Object.keys(careStats.reminder_type_stats || {}).length" class="chart-container small" ref="reminderChartRef"></div>
+        <div v-else class="empty-state" style="padding: 40px;">
+          <div class="empty-icon">🔔</div>
+          <p>暂无提醒数据</p>
         </div>
       </div>
     </div>
@@ -102,6 +145,44 @@
       </div>
 
       <div class="card">
+        <div class="card-title">🧴 护理方式详细对比</div>
+        <table class="table" v-if="careMethodComfort.length">
+          <thead>
+            <tr>
+              <th>护理方式</th>
+              <th>镜片数</th>
+              <th>平均舒适</th>
+              <th>不适率</th>
+              <th>总时长</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="c in careMethodComfort" :key="c.care_method">
+              <td class="text-bold">{{ c.care_method_display || '-' }}</td>
+              <td>{{ c.lens_count }} 副</td>
+              <td>
+                <span :class="getComfortClass(Math.round(c.avg_comfort))">
+                  {{ c.avg_comfort ? '⭐'.repeat(Math.round(c.avg_comfort)) : '-' }}
+                </span>
+                <span class="text-sm ml-8">{{ c.avg_comfort || '-' }}</span>
+              </td>
+              <td>
+                <span class="tag" :class="getCareBadRateClass(c)">
+                  {{ calcCareBadRate(c) }}%
+                </span>
+              </td>
+              <td>{{ c.total_hours }}h</td>
+            </tr>
+          </tbody>
+        </table>
+        <div v-else class="empty-state" style="padding: 30px;">
+          <p class="text-light">暂无护理方式数据</p>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+      <div class="card">
         <div class="card-title">💧 含水量详细分析</div>
         <table class="table" v-if="waterStats.length">
           <thead>
@@ -136,6 +217,33 @@
           <p class="text-light">暂无数据</p>
         </div>
       </div>
+
+      <div class="card">
+        <div class="card-title">📋 护理记录统计概览</div>
+        <table class="table" v-if="Object.keys(careStats.care_type_stats || {}).length">
+          <thead>
+            <tr>
+              <th>护理类型</th>
+              <th>次数</th>
+              <th>占比</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(count, type) in careStats.care_type_stats" :key="type">
+              <td class="text-bold">{{ getCareTypeLabel(type) }}</td>
+              <td>{{ count }} 次</td>
+              <td>
+                <span class="tag tag-blue">
+                  {{ careStats.total_care_records ? Math.round(count / careStats.total_care_records * 100) : 0 }}%
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <div v-else class="empty-state" style="padding: 30px;">
+          <p class="text-light">暂无护理记录</p>
+        </div>
+      </div>
     </div>
 
     <div class="card mb-20">
@@ -146,6 +254,7 @@
             <th>镜片</th>
             <th>度数</th>
             <th>参数</th>
+            <th>护理状态</th>
             <th>上次佩戴</th>
             <th>未使用</th>
             <th>有效期</th>
@@ -159,6 +268,12 @@
             </td>
             <td>{{ lens.power_sph }}D</td>
             <td class="text-sm">{{ lens.water_content }}% · BC{{ lens.base_curve }}</td>
+            <td>
+              <span v-if="lens.care_status" class="tag" :class="getCareStatusTagClass(lens.care_status)">
+                {{ getCareStatusLabel(lens.care_status) }}
+              </span>
+              <span v-else class="tag tag-gray">未设置</span>
+            </td>
             <td>{{ formatDate(lens.last_wear_date) || '从未佩戴' }}</td>
             <td>
               <span class="tag tag-blue">超过 {{ getUnusedDays(lens) }} 天</span>
@@ -196,11 +311,13 @@ import { ref, onMounted, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import {
   getStatsOverview, getBrandComfort, getWaterContentFit,
-  getPurposeStats, getEyeTips
+  getPurposeStats, getEyeTips, getCareStats, getCareMethodComfort
 } from '@/api/stats'
 import { getUnusedLenses, getLensList } from '@/api/lens'
 import { getRecordList } from '@/api/record'
-import { formatDate, getComfortClass } from '@/utils/constants'
+import {
+  formatDate, getComfortClass, CARE_STATUS_MAP, CARE_TYPE_OPTIONS
+} from '@/utils/constants'
 
 const overview = ref({})
 const brandStats = ref([])
@@ -210,14 +327,27 @@ const unusedLenses = ref([])
 const tips = ref([])
 const allRecords = ref([])
 const allLenses = ref([])
+const careStats = ref({})
+const careMethodComfort = ref([])
 
 const brandChartRef = ref(null)
 const waterChartRef = ref(null)
 const purposeChartRef = ref(null)
 const hoursPieRef = ref(null)
+const careMethodChartRef = ref(null)
+const reminderChartRef = ref(null)
 let brandChart = null, waterChart = null, purposeChart = null, hoursPieChart = null
+let careMethodChart = null, reminderChart = null
 
 const lensHoursList = ref([])
+
+const REMINDER_TYPE_LABELS = {
+  care: '护理提醒',
+  replacement: '更换提醒',
+  checkup: '复查提醒',
+  rest: '停戴提醒',
+  risk: '风险提醒'
+}
 
 const calcBadRate = (w) => {
   if (!w.total_records) return 0
@@ -236,14 +366,41 @@ const getBadRateClass = (w) => {
   return 'tag-green'
 }
 
+const calcCareBadRate = (c) => {
+  if (!c.total_records) return 0
+  const badReactions = ['dryness', 'redness', 'fatigue', 'dryness_redness', 'dryness_fatigue', 'redness_fatigue', 'all']
+  let badCount = 0
+  c.reactions?.forEach(r => {
+    if (badReactions.includes(r.eye_reaction)) badCount += r.count
+  })
+  return Math.round(badCount / c.total_records * 100)
+}
+
+const getCareBadRateClass = (c) => {
+  const rate = calcCareBadRate(c)
+  if (rate > 50) return 'tag-red'
+  if (rate > 30) return 'tag-yellow'
+  return 'tag-green'
+}
+
 const getUnusedDays = (lens) => {
   const refDate = lens.last_wear_date ? new Date(lens.last_wear_date) : new Date(lens.created_at)
   return Math.floor((Date.now() - refDate.getTime()) / 86400000)
 }
 
+const getCareStatusLabel = (status) => CARE_STATUS_MAP[status] || status
+const getCareStatusTagClass = (status) => {
+  const map = { normal: 'tag-green', rest: 'tag-purple', overdue: 'tag-red', soon: 'tag-yellow' }
+  return map[status] || 'tag-gray'
+}
+const getCareTypeLabel = (type) => {
+  const opt = CARE_TYPE_OPTIONS.find(o => o.value === type)
+  return opt ? opt.label : type
+}
+
 const loadData = async () => {
   try {
-    const [ov, brands, waters, purposes, unused, tps, records, lenses] = await Promise.all([
+    const [ov, brands, waters, purposes, unused, tps, records, lenses, care, careMethod] = await Promise.all([
       getStatsOverview(),
       getBrandComfort(),
       getWaterContentFit(),
@@ -251,7 +408,9 @@ const loadData = async () => {
       getUnusedLenses(90),
       getEyeTips(),
       getRecordList({ page_size: 1000 }),
-      getLensList()
+      getLensList(),
+      getCareStats(),
+      getCareMethodComfort()
     ])
     overview.value = ov
     brandStats.value = Array.isArray(brands) ? brands : []
@@ -261,6 +420,8 @@ const loadData = async () => {
     tips.value = Array.isArray(tps) ? tps : []
     allRecords.value = Array.isArray(records) ? records : (records.results || [])
     allLenses.value = Array.isArray(lenses) ? lenses : (lenses.results || [])
+    careStats.value = care || {}
+    careMethodComfort.value = Array.isArray(careMethod) ? careMethod : []
 
     const hoursMap = {}
     allRecords.value.forEach(r => {
@@ -278,6 +439,8 @@ const loadData = async () => {
     renderWaterChart()
     renderPurposeChart()
     renderHoursPie()
+    renderCareMethodChart()
+    renderReminderChart()
   } catch (e) {
     console.error(e)
   }
@@ -395,10 +558,68 @@ const renderHoursPie = () => {
   })
 }
 
+const renderCareMethodChart = () => {
+  if (!careMethodChartRef.value || !careMethodComfort.value.length) return
+  if (!careMethodChart) careMethodChart = echarts.init(careMethodChartRef.value)
+  const data = careMethodComfort.value.filter(c => c.total_records > 0)
+  careMethodChart.setOption({
+    tooltip: { trigger: 'axis' },
+    legend: { data: ['平均舒适度', '不适率(%)'], top: 0 },
+    grid: { left: 90, right: 60, top: 40, bottom: 30 },
+    xAxis: { type: 'value', min: 0, max: 5, name: '舒适度' },
+    yAxis: {
+      type: 'category',
+      data: [...data].reverse().map(c => c.care_method_display || c.care_method)
+    },
+    series: [
+      {
+        name: '平均舒适度',
+        type: 'bar',
+        data: [...data].reverse().map(c => c.avg_comfort),
+        itemStyle: {
+          color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+            { offset: 0, color: '#34D399' },
+            { offset: 1, color: '#10B981' }
+          ]),
+          borderRadius: [0, 8, 8, 0]
+        },
+        label: { show: true, position: 'right', formatter: p => p.value + ' ⭐' },
+        barWidth: 18
+      }
+    ]
+  })
+}
+
+const renderReminderChart = () => {
+  if (!reminderChartRef.value || !Object.keys(careStats.value.reminder_type_stats || {}).length) return
+  if (!reminderChart) reminderChart = echarts.init(reminderChartRef.value)
+  const data = Object.entries(careStats.value.reminder_type_stats || {}).map(([type, count]) => ({
+    name: REMINDER_TYPE_LABELS[type] || type,
+    value: count
+  }))
+  const colors = ['#60A5FA', '#F59E0B', '#EF4444', '#8B5CF6', '#F472B6']
+  reminderChart.setOption({
+    tooltip: { trigger: 'item', formatter: p => `${p.name}<br/>${p.value}条 (${p.percent}%)` },
+    legend: { bottom: 0 },
+    series: [{
+      type: 'pie',
+      radius: ['40%', '70%'],
+      center: ['50%', '45%'],
+      itemStyle: { borderRadius: 8, borderColor: '#fff', borderWidth: 3 },
+      label: { formatter: '{b}\n{d}%' },
+      data: data.map((d, i) => ({
+        ...d,
+        itemStyle: { color: colors[i % colors.length] }
+      }))
+    }]
+  })
+}
+
 onMounted(async () => {
   await loadData()
   window.addEventListener('resize', () => {
     brandChart?.resize(); waterChart?.resize(); purposeChart?.resize(); hoursPieChart?.resize()
+    careMethodChart?.resize(); reminderChart?.resize()
   })
 })
 </script>
