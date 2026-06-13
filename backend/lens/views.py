@@ -124,15 +124,23 @@ class WearRecordViewSet(viewsets.ModelViewSet):
             qs = qs.filter(wear_date__gte=date_from)
         if date_to:
             qs = qs.filter(wear_date__lte=date_to)
-        from django.db.models.functions import TruncDate
-        daily = qs.annotate(
-            date=TruncDate('wear_date')
-        ).values('date').annotate(
-            total_hours=Sum('duration_hours'),
-            count=Count('id'),
-            avg_comfort=Avg('comfort_level')
-        ).order_by('-date')
-        return Response(daily)
+        daily_map = {}
+        for r in qs:
+            d = r.wear_date.isoformat()
+            if d not in daily_map:
+                daily_map[d] = {'date': d, 'hours': 0, 'count': 0, 'comfort_sum': 0}
+            daily_map[d]['hours'] += r.duration_hours
+            daily_map[d]['count'] += 1
+            daily_map[d]['comfort_sum'] += r.comfort_level
+        result = []
+        for d, v in sorted(daily_map.items(), key=lambda x: x[0], reverse=True):
+            result.append({
+                'date': v['date'],
+                'total_hours': round(v['hours'], 2),
+                'count': v['count'],
+                'avg_comfort': round(v['comfort_sum'] / v['count'], 2) if v['count'] else 0
+            })
+        return Response(result)
 
     @action(detail=False, methods=['get'])
     def today_warning(self, request):
@@ -264,17 +272,24 @@ class StatsViewSet(viewsets.ViewSet):
     def comfort_trend(self, request):
         days = int(request.query_params.get('days', 30))
         start_date = timezone.now().date() - timedelta(days=days)
-        from django.db.models.functions import TruncDate
-        data = WearRecord.objects.filter(
-            wear_date__gte=start_date
-        ).annotate(
-            date=TruncDate('wear_date')
-        ).values('date').annotate(
-            avg_comfort=Avg('comfort_level'),
-            total_hours=Sum('duration_hours'),
-            count=Count('id')
-        ).order_by('date')
-        return Response(data)
+        qs = WearRecord.objects.filter(wear_date__gte=start_date)
+        daily_map = {}
+        for r in qs:
+            d = r.wear_date.isoformat()
+            if d not in daily_map:
+                daily_map[d] = {'date': d, 'hours': 0, 'count': 0, 'comfort_sum': 0}
+            daily_map[d]['hours'] += r.duration_hours
+            daily_map[d]['count'] += 1
+            daily_map[d]['comfort_sum'] += r.comfort_level
+        result = []
+        for d, v in sorted(daily_map.items(), key=lambda x: x[0]):
+            result.append({
+                'date': v['date'],
+                'avg_comfort': round(v['comfort_sum'] / v['count'], 2) if v['count'] else 0,
+                'total_hours': round(v['hours'], 2),
+                'count': v['count']
+            })
+        return Response(result)
 
     @action(detail=False, methods=['get'])
     def eye_tips(self, request):
@@ -289,7 +304,7 @@ class StatsViewSet(viewsets.ViewSet):
             return Response(tips)
         total_hours = WearRecord.objects.aggregate(Sum('duration_hours'))['duration_hours__sum'] or 0
         avg_hours = total_hours / total_records if total_records > 0 else 0
-        bad_records = WearRecord.objects.filter(eye_reaction__ne='none').count()
+        bad_records = WearRecord.objects.exclude(eye_reaction='none').count()
         bad_ratio = bad_records / total_records if total_records > 0 else 0
         low_comfort = WearRecord.objects.filter(comfort_level__lte=2).count()
         recent_30 = timezone.now().date() - timedelta(days=30)
