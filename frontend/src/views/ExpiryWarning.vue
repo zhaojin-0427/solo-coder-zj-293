@@ -4,14 +4,27 @@
       <h1 class="page-title"><span class="icon">⏰</span>过期预警</h1>
     </div>
 
-    <div class="mb-16">
-      <select v-model="warningDays" class="form-control" style="width: auto;" @change="loadData">
-        <option :value="7">7天内</option>
-        <option :value="14">14天内</option>
-        <option :value="30">30天内</option>
-        <option :value="60">60天内</option>
-        <option :value="90">90天内</option>
-      </select>
+    <div class="mb-16" style="display: flex; gap: 16px; flex-wrap: wrap; align-items: center;">
+      <div>
+        <label class="form-label text-sm" style="margin-bottom: 4px; display: block;">即将过期阈值</label>
+        <select v-model="warningDays" class="form-control" style="width: auto;" @change="loadData">
+          <option :value="7">7天内</option>
+          <option :value="14">14天内</option>
+          <option :value="30">30天内</option>
+          <option :value="60">60天内</option>
+          <option :value="90">90天内</option>
+        </select>
+      </div>
+      <div>
+        <label class="form-label text-sm" style="margin-bottom: 4px; display: block;">长期未使用阈值</label>
+        <select v-model="unusedDays" class="form-control" style="width: auto;" @change="loadData">
+          <option :value="15">超过15天</option>
+          <option :value="30">超过30天</option>
+          <option :value="60">超过60天</option>
+          <option :value="90">超过90天</option>
+          <option :value="180">超过180天</option>
+        </select>
+      </div>
     </div>
 
     <div class="stats-grid">
@@ -24,7 +37,7 @@
         <div class="stat-value" style="color: #D97706;">{{ soonLenses.length }} 副</div>
       </div>
       <div class="stat-card" style="background: linear-gradient(135deg, #DBEAFE, #BFDBFE);">
-        <div class="stat-label">🔔 长期未使用(>90天)</div>
+        <div class="stat-label">🔔 长期未使用(>{{ unusedDays }}天)</div>
         <div class="stat-value" style="color: #2563EB;">{{ unusedLenses.length }} 副</div>
       </div>
       <div class="stat-card green">
@@ -203,6 +216,7 @@ const allExpiring = ref([])
 const unusedLenses = ref([])
 const allLenses = ref([])
 const warningDays = ref(30)
+const unusedDays = ref(30)
 
 const expiredLenses = computed(() => {
   return allExpiring.value.filter(l => l.is_expired || l.days_until_expiry < 0)
@@ -230,7 +244,7 @@ const loadData = async () => {
   try {
     const [exp, unused, all] = await Promise.all([
       getExpiringLenses(warningDays.value),
-      getUnusedLenses(90),
+      getUnusedLenses(unusedDays.value),
       getLensList()
     ])
     allExpiring.value = Array.isArray(exp) ? exp : (exp.results || [])

@@ -26,7 +26,7 @@ export function createLens(data) {
 export function updateLens(id, data) {
   return request({
     url: `/lenses/${id}/`,
-    method: 'put',
+    method: 'patch',
     data
   })
 }

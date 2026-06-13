@@ -26,7 +26,7 @@ export function createRecord(data) {
 export function updateRecord(id, data) {
   return request({
     url: `/records/${id}/`,
-    method: 'put',
+    method: 'patch',
     data
   })
 }

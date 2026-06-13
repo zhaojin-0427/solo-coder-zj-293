@@ -71,7 +71,7 @@ class WearRecord(models.Model):
         ('all', '全部不适'),
     ]
 
-    lens = models.ForeignKey(Lens, on_delete=models.CASCADE, related_name='wear_records', verbose_name='镜片')
+    lens = models.ForeignKey(Lens, on_delete=models.SET_NULL, null=True, related_name='wear_records', verbose_name='镜片')
     wear_date = models.DateField('佩戴日期')
     duration_hours = models.FloatField('佩戴时长(小时)')
     comfort_level = models.IntegerField('舒适度(1-5)', default=3)
