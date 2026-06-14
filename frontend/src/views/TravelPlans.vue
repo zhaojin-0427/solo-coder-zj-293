@@ -550,13 +550,13 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-
-const route = useRoute()
+import { useTravelData } from '@/composables/useTravelBudgetData'
 import {
-  getTravelPlanList, getTravelPlanDetail, createTravelPlan, updateTravelPlan, deleteTravelPlan,
-  markTravelPlanCompleted, markTravelPlanCancelled
+  getTravelPlanDetail,
+  markTravelPlanCompleted,
+  markTravelPlanCancelled
 } from '@/api/travel'
 import { getLensList } from '@/api/lens'
 import {
@@ -573,11 +573,30 @@ import {
   STATUS_MAP, CARE_METHOD_MAP
 } from '@/utils/constants'
 
-const plans = ref([])
-const filterStatus = ref('')
-const filterRiskLevel = ref('')
-const filterMonth = ref('')
-const filterDestination = ref('')
+const route = useRoute()
+
+const {
+  blocks,
+  filterStatus,
+  filterRiskLevel,
+  filterMonth,
+  filterDestination,
+  searchKeyword,
+  upcomingHighRiskPlans,
+  debouncedLoad,
+  loadAll,
+  reload,
+  refresh,
+  handleCreate,
+  handleUpdate,
+  handleDelete: deleteTravel
+} = useTravelData()
+
+const plans = computed(() => blocks.plans.data.value || [])
+const upcomingPlans = computed(() => blocks.upcomingPlans.data.value || [])
+
+const loadPlans = () => reload('plans')
+
 const availableLenses = ref([])
 
 const showDetail = ref(false)
@@ -611,32 +630,6 @@ const defaultForm = {
   daily_plans: []
 }
 const form = ref({ ...defaultForm })
-
-const upcomingHighRiskPlans = ref([])
-
-let debounceTimer = null
-const debouncedLoad = () => {
-  clearTimeout(debounceTimer)
-  debounceTimer = setTimeout(loadPlans, 300)
-}
-
-const loadPlans = async () => {
-  try {
-    const params = {}
-    if (filterStatus.value) params.status = filterStatus.value
-    if (filterRiskLevel.value) params.risk_level = filterRiskLevel.value
-    if (filterMonth.value) params.month = filterMonth.value
-    if (filterDestination.value) params.destination = filterDestination.value
-    const res = await getTravelPlanList(params)
-    plans.value = Array.isArray(res) ? res : (res.results || [])
-    upcomingHighRiskPlans.value = plans.value.filter(p =>
-      (p.status === 'planning' || p.status === 'upcoming' || p.status === 'in_progress') &&
-      p.risk_level === 'high'
-    )
-  } catch (e) {
-    console.error(e)
-  }
-}
 
 const loadAvailableLenses = async () => {
   try {
@@ -837,16 +830,18 @@ const handleSave = async () => {
     }
   }
 
-  try {
-    const payload = { ...form.value }
-    if (editingPlan.value) {
-      await updateTravelPlan(editingPlan.value.id, payload)
-    } else {
-      await createTravelPlan(payload)
-    }
+  const payload = { ...form.value }
+  let result
+  if (editingPlan.value) {
+    result = await handleUpdate(editingPlan.value.id, payload)
+  } else {
+    result = await handleCreate(payload)
+  }
+
+  if (result.ok) {
     showForm.value = false
-    loadPlans()
-  } catch (e) {
+  } else {
+    const e = result.error
     console.error(e)
     const errorMsg = e?.response?.data?.detail
       || Object.values(e?.response?.data || {}).flat().join('; ')
@@ -857,11 +852,9 @@ const handleSave = async () => {
 
 const handleDelete = async (id) => {
   if (!confirm('确定要删除这个旅行方案吗？')) return
-  try {
-    await deleteTravelPlan(id)
-    loadPlans()
-  } catch (e) {
-    console.error(e)
+  const result = await deleteTravel(id)
+  if (!result.ok) {
+    console.error(result.error)
   }
 }
 
@@ -870,7 +863,7 @@ const handleMarkCompleted = async (id) => {
   try {
     await markTravelPlanCompleted(id)
     showDetail.value = false
-    loadPlans()
+    await refresh()
   } catch (e) {
     console.error(e)
   }
@@ -881,14 +874,14 @@ const handleMarkCancelled = async (id) => {
   try {
     await markTravelPlanCancelled(id)
     showDetail.value = false
-    loadPlans()
+    await refresh()
   } catch (e) {
     console.error(e)
   }
 }
 
 onMounted(() => {
-  loadPlans()
+  loadAll()
   loadAvailableLenses()
 })
 </script>

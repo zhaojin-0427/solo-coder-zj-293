@@ -497,32 +497,46 @@
 <script setup>
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import * as echarts from 'echarts'
-import {
-  getPurchaseRecordList, createPurchaseRecord, updatePurchaseRecord, deletePurchaseRecord,
-  getPurchaseRecordMonths, getRestockSuggestionList, getActiveRestockSuggestions,
-  generateRestockSuggestions, markRestockActionTaken, dismissRestockSuggestion,
-  markAllRestockActionTaken, dismissAllRestockSuggestions,
-  getBudgetStats
-} from '@/api/budget'
 import { getLensList } from '@/api/lens'
+import { useBudgetData } from '@/composables/useTravelBudgetData'
 import {
   formatDate, PURCHASE_CHANNEL_OPTIONS, PAYMENT_STATUS_OPTIONS, PAYMENT_STATUS_MAP,
   RESTOCK_SUGGESTION_TYPE_MAP, RESTOCK_SEVERITY_MAP, RESTOCK_PRIORITY_OPTIONS
 } from '@/utils/constants'
 
-const activeTab = ref('purchases')
-const filterBrand = ref('')
-const filterChannel = ref('')
-const filterPriority = ref('')
-const filterMonth = ref('')
-const budgetLimit = ref(500)
+const {
+  blocks,
+  loading,
+  filterBrand,
+  filterChannel,
+  filterPriority,
+  filterMonth,
+  budgetLimit,
+  activeTab,
+  totalWarnings,
+  brandList,
+  loadAll,
+  reload,
+  refresh,
+  loadBudgetStats: _loadBudgetStats,
+  loadPurchaseRecords: _loadPurchaseRecords,
+  loadAllData: _loadAllData,
+  generateSuggestions: _generateSuggestions,
+  markActionTaken: _markActionTaken,
+  dismissSuggestion: _dismissSuggestion,
+  markAllActionTaken: _markAllActionTaken,
+  dismissAll: _dismissAll,
+  createPurchase,
+  updatePurchase,
+  deletePurchase: _deletePurchase,
+} = useBudgetData()
 
-const purchaseRecords = ref([])
-const restockSuggestions = ref([])
-const budgetStats = ref({})
+const budgetStats = computed(() => blocks.budgetStats.data.value)
+const restockSuggestions = computed(() => blocks.restockSuggestions.data.value)
+const purchaseRecords = computed(() => blocks.purchaseRecords.data.value)
+const availableMonths = computed(() => blocks.monthList.data.value)
+
 const lensList = ref([])
-const brandList = ref([])
-const availableMonths = ref([])
 
 const showPurchaseModal = ref(false)
 const editingPurchase = ref(null)
@@ -549,12 +563,6 @@ const brandPieChartRef = ref(null)
 const channelPriceChartRef = ref(null)
 let monthlyTrendChart = null, brandPieChart = null, channelPriceChart = null
 
-const totalWarnings = computed(() => {
-  return (budgetStats.value.running_out_soon?.length || 0) +
-         (budgetStats.value.expiring_with_stock?.length || 0) +
-         (budgetStats.value.low_comfort_high_cost?.length || 0)
-})
-
 const calculatedTotal = computed(() => {
   const discountMultiplier = (purchaseForm.value.discount || 100) / 100
   return (purchaseForm.value.unit_price || 0) * (purchaseForm.value.quantity || 0) * discountMultiplier
@@ -573,91 +581,43 @@ const loadLensList = async () => {
   try {
     const res = await getLensList()
     lensList.value = Array.isArray(res) ? res : (res.results || [])
-    const brands = [...new Set(lensList.value.map(l => l.brand))].filter(Boolean)
-    brandList.value = brands.sort()
   } catch (e) {
     console.error(e)
   }
 }
 
-const loadAvailableMonths = async () => {
-  try {
-    const res = await getPurchaseRecordMonths()
-    const months = Array.isArray(res) ? res : []
-    const currentMonth = new Date().toISOString().slice(0, 7)
-    if (!months.includes(currentMonth)) {
-      months.unshift(currentMonth)
-    }
-    availableMonths.value = months
-    if (!filterMonth.value && availableMonths.value.length) {
-      filterMonth.value = availableMonths.value[0]
-    }
-  } catch (e) {
-    console.error(e)
-    const currentMonth = new Date().toISOString().slice(0, 7)
-    availableMonths.value = [currentMonth]
-    filterMonth.value = currentMonth
+watch(availableMonths, (months) => {
+  if (!filterMonth.value && Array.isArray(months) && months.length) {
+    filterMonth.value = months[0]
   }
+}, { immediate: true })
+
+const loadBudgetStats = async () => {
+  await _loadBudgetStats()
+  await nextTick()
+  renderCharts()
 }
 
 const loadPurchaseRecords = async () => {
-  try {
-    const params = {}
-    if (filterBrand.value) params.brand = filterBrand.value
-    if (filterChannel.value) params.channel = filterChannel.value
-    if (filterMonth.value) params.budget_month = filterMonth.value
-    if (filterPriority.value) params.restock_priority = filterPriority.value
-    const res = await getPurchaseRecordList(params)
-    purchaseRecords.value = Array.isArray(res) ? res : (res.results || [])
-  } catch (e) {
-    console.error(e)
-  }
+  await _loadPurchaseRecords()
 }
 
-const loadRestockSuggestions = async () => {
-  try {
-    const params = {}
-    if (filterPriority.value) params.severity = filterPriority.value
-    const res = await getActiveRestockSuggestions()
-    restockSuggestions.value = Array.isArray(res) ? res : (res.results || [])
-  } catch (e) {
-    console.error(e)
-  }
+const loadAllData = async () => {
+  await _loadAllData()
+  await nextTick()
+  renderCharts()
 }
 
-const loadBudgetStats = async () => {
-  try {
-    const params = {
-      limit: budgetLimit.value
-    }
-    if (filterMonth.value) params.month = filterMonth.value
-    if (filterPriority.value) params.priority = filterPriority.value
-    const res = await getBudgetStats(params)
-    budgetStats.value = res || {}
-    await nextTick()
-    renderCharts()
-  } catch (e) {
-    console.error(e)
-  }
-}
-
-const loadAllData = () => {
-  loadPurchaseRecords()
-  loadRestockSuggestions()
-  loadBudgetStats()
-}
-
-const generateSuggestions = async () => {
-  try {
-    await generateRestockSuggestions()
-    loadRestockSuggestions()
-    loadBudgetStats()
+const handleGenerateSuggestions = async () => {
+  const result = await _generateSuggestions()
+  if (result.ok) {
     alert('补货建议已生成！')
-  } catch (e) {
-    console.error(e)
+  } else {
     alert('生成失败，请重试')
   }
 }
+
+const generateSuggestions = handleGenerateSuggestions
 
 const editPurchase = (record) => {
   editingPurchase.value = record
@@ -673,75 +633,57 @@ const savePurchase = async () => {
     alert('请填写必填项：关联镜片、采购日期、单价')
     return
   }
-  try {
-    const payload = { ...purchaseForm.value }
-    if (editingPurchase.value) {
-      await updatePurchaseRecord(editingPurchase.value.id, payload)
-    } else {
-      await createPurchaseRecord(payload)
-    }
+  const payload = { ...purchaseForm.value }
+  let result
+  if (editingPurchase.value) {
+    result = await updatePurchase(editingPurchase.value.id, payload)
+  } else {
+    result = await createPurchase(payload)
+  }
+  if (result.ok) {
     showPurchaseModal.value = false
-    loadAllData()
-    loadAvailableMonths()
-    loadLensList()
-  } catch (e) {
-    console.error(e)
+    await reload('monthList')
+    await loadLensList()
+  } else {
     alert('保存失败，请检查表单数据')
   }
 }
 
-const deletePurchase = async (id) => {
+const handleDeletePurchase = async (id) => {
   if (!confirm('确定要删除这条采购记录吗？镜片库存会相应减少。')) return
-  try {
-    await deletePurchaseRecord(id)
-    loadAllData()
-    loadLensList()
-  } catch (e) {
-    console.error(e)
+  const result = await _deletePurchase(id)
+  if (result.ok) {
+    await loadLensList()
   }
 }
 
-const markActionTaken = async (id) => {
-  try {
-    await markRestockActionTaken(id)
-    loadRestockSuggestions()
-    loadBudgetStats()
-  } catch (e) {
-    console.error(e)
-  }
+const deletePurchase = handleDeletePurchase
+
+const handleMarkActionTaken = async (id) => {
+  await _markActionTaken(id)
 }
 
-const dismissSuggestion = async (id) => {
-  try {
-    await dismissRestockSuggestion(id)
-    loadRestockSuggestions()
-    loadBudgetStats()
-  } catch (e) {
-    console.error(e)
-  }
+const markActionTaken = handleMarkActionTaken
+
+const handleDismissSuggestion = async (id) => {
+  await _dismissSuggestion(id)
 }
 
-const markAllActionTaken = async () => {
+const dismissSuggestion = handleDismissSuggestion
+
+const handleMarkAllActionTaken = async () => {
   if (!confirm('确定要将所有补货建议标记为已处理吗？')) return
-  try {
-    await markAllRestockActionTaken()
-    loadRestockSuggestions()
-    loadBudgetStats()
-  } catch (e) {
-    console.error(e)
-  }
+  await _markAllActionTaken()
 }
 
-const dismissAll = async () => {
+const markAllActionTaken = handleMarkAllActionTaken
+
+const handleDismissAll = async () => {
   if (!confirm('确定要忽略所有补货建议吗？')) return
-  try {
-    await dismissAllRestockSuggestions()
-    loadRestockSuggestions()
-    loadBudgetStats()
-  } catch (e) {
-    console.error(e)
-  }
+  await _dismissAll()
 }
+
+const dismissAll = handleDismissAll
 
 const renderCharts = () => {
   renderMonthlyTrendChart()
@@ -876,8 +818,7 @@ const renderChannelPriceChart = () => {
 
 onMounted(async () => {
   await loadLensList()
-  await loadAvailableMonths()
-  loadAllData()
+  await loadAllData()
   window.addEventListener('resize', () => {
     monthlyTrendChart?.resize()
     brandPieChart?.resize()

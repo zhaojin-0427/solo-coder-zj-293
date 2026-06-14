@@ -308,164 +308,61 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import * as echarts from 'echarts'
-import { getStatsOverview, getComfortTrend, getEyeTips } from '@/api/stats'
-import { getExpiringLenses } from '@/api/lens'
-import { getTodayWarning, getRecordList } from '@/api/record'
-import { getUpcomingPlans, getOverduePlans, getOutfitPlanStats } from '@/api/outfitPlan'
-import { getActiveRestockSuggestions, markRestockActionTaken, dismissRestockSuggestion } from '@/api/budget'
-import { getUpcomingTravelPlans } from '@/api/travel'
+import { computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { useDashboardData, dashboardComfortChartOption } from '@/composables/useDashboardData'
+import { createChart } from '@/composables/useCharts'
 import { formatDate, renderStars, OUTFIT_STATUS_MAP, SCENE_ICON_MAP, RESTOCK_SUGGESTION_TYPE_MAP, RESTOCK_SEVERITY_MAP, TRAVEL_STATUS_MAP, TRAVEL_RISK_LEVEL_MAP } from '@/utils/constants'
 
-const overview = ref({})
-const todayWarning = ref(null)
-const tips = ref([])
-const expiringLenses = ref([])
-const recentRecords = ref([])
-const upcomingPlans = ref([])
-const overduePlans = ref([])
-const outfitStats = ref({})
-const restockSuggestions = ref([])
-const upcomingTravelPlans = ref([])
-const comfortChartRef = ref(null)
-let chartInstance = null
+const {
+  blocks,
+  loadAll,
+  handleMarkActionTaken,
+  handleDismissSuggestion,
+  alertClass,
+  alertIcon,
+  progressWidth,
+  progressClass,
+} = useDashboardData()
+
+const overview = computed(() => blocks.overview.data.value)
+const todayWarning = computed(() => blocks.todayWarning.data.value)
+const tips = computed(() => blocks.tips.data.value)
+const expiringLenses = computed(() => blocks.expiringLenses.data.value)
+const recentRecords = computed(() => blocks.recentRecords.data.value)
+const upcomingPlans = computed(() => blocks.upcomingPlans.data.value)
+const overduePlans = computed(() => blocks.overduePlans.data.value)
+const outfitStats = computed(() => blocks.outfitStats.data.value)
+const restockSuggestions = computed(() => blocks.restockSuggestions.data.value)
+const upcomingTravelPlans = computed(() => blocks.upcomingTravelPlans.data.value)
 
 const getSceneIcon = (scene) => SCENE_ICON_MAP[scene] || '📌'
 
-const alertClass = computed(() => {
-  if (!todayWarning.value) return ''
-  return {
-    normal: 'alert-success',
-    warning: 'alert-warning',
-    danger: 'alert-danger'
-  }[todayWarning.value.status] || 'alert-info'
+const {
+  chartRef: comfortChartRef,
+  setOption: setComfortChartOption,
+  resize: resizeComfortChart,
+  dispose: disposeComfortChart,
+} = createChart(dashboardComfortChartOption)
+
+let resizeHandler = null
+
+watch(() => blocks.comfortTrend.data.value, (val) => {
+  if (val) setComfortChartOption(val)
 })
 
-const alertIcon = computed(() => {
-  if (!todayWarning.value) return '✅'
-  return {
-    normal: '✅',
-    warning: '⚠️',
-    danger: '🚨'
-  }[todayWarning.value.status] || 'ℹ️'
+onMounted(async () => {
+  await loadAll()
+  setComfortChartOption(blocks.comfortTrend.data.value)
+  resizeHandler = () => resizeComfortChart()
+  window.addEventListener('resize', resizeHandler)
 })
 
-const progressWidth = computed(() => {
-  if (!todayWarning.value) return 0
-  return Math.min(100, (todayWarning.value.total_hours / todayWarning.value.warning_threshold) * 100)
-})
-
-const progressClass = computed(() => {
-  if (!todayWarning.value) return 'success'
-  return {
-    normal: 'success',
-    warning: 'warning',
-    danger: 'danger'
-  }[todayWarning.value.status] || 'success'
-})
-
-const loadData = async () => {
-  try {
-    const [ov, warn, tp, exp, rec, trend, upcoming, overdue, outfitSt, restock, upcomingTravel] = await Promise.all([
-      getStatsOverview(),
-      getTodayWarning().catch(() => null),
-      getEyeTips(),
-      getExpiringLenses(30),
-      getRecordList({ page_size: 10 }),
-      getComfortTrend(30),
-      getUpcomingPlans(7),
-      getOverduePlans(),
-      getOutfitPlanStats(),
-      getActiveRestockSuggestions().catch(() => []),
-      getUpcomingTravelPlans().catch(() => [])
-    ])
-    overview.value = ov
-    todayWarning.value = warn
-    tips.value = tp
-    expiringLenses.value = Array.isArray(exp) ? exp : (exp.results || [])
-    recentRecords.value = Array.isArray(rec) ? rec : (rec.results || [])
-    upcomingPlans.value = Array.isArray(upcoming) ? upcoming : (upcoming.results || [])
-    overduePlans.value = Array.isArray(overdue) ? overdue : (overdue.results || [])
-    outfitStats.value = outfitSt || {}
-    restockSuggestions.value = Array.isArray(restock) ? restock : (restock.results || [])
-    upcomingTravelPlans.value = Array.isArray(upcomingTravel) ? upcomingTravel : (upcomingTravel.results || [])
-    renderComfortChart(trend || [])
-  } catch (e) {
-    console.error(e)
+onBeforeUnmount(() => {
+  if (resizeHandler) {
+    window.removeEventListener('resize', resizeHandler)
+    resizeHandler = null
   }
-}
-
-const handleMarkActionTaken = async (id) => {
-  try {
-    await markRestockActionTaken(id)
-    loadData()
-  } catch (e) {
-    console.error(e)
-  }
-}
-
-const handleDismissSuggestion = async (id) => {
-  try {
-    await dismissRestockSuggestion(id)
-    loadData()
-  } catch (e) {
-    console.error(e)
-  }
-}
-
-const renderComfortChart = (data) => {
-  if (!comfortChartRef.value) return
-  if (!chartInstance) {
-    chartInstance = echarts.init(comfortChartRef.value)
-  }
-  const dates = data.map(d => d.date ? d.date.slice(5) : '').filter(Boolean)
-  const comforts = data.map(d => Number(d.avg_comfort || 0))
-  const hours = data.map(d => Number(d.total_hours || 0))
-
-  chartInstance.setOption({
-    tooltip: { trigger: 'axis' },
-    legend: { data: ['舒适度', '佩戴时长'], top: 0 },
-    grid: { left: 40, right: 50, top: 40, bottom: 30 },
-    xAxis: { type: 'category', data: dates, axisLabel: { fontSize: 11 } },
-    yAxis: [
-      { type: 'value', min: 0, max: 5, name: '舒适度' },
-      { type: 'value', min: 0, name: '小时' }
-    ],
-    series: [
-      {
-        name: '舒适度',
-        type: 'line',
-        data: comforts,
-        smooth: true,
-        itemStyle: { color: '#8B5CF6' },
-        areaStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: 'rgba(139, 92, 246, 0.3)' },
-            { offset: 1, color: 'rgba(139, 92, 246, 0.02)' }
-          ])
-        }
-      },
-      {
-        name: '佩戴时长',
-        type: 'bar',
-        yAxisIndex: 1,
-        data: hours,
-        itemStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: '#F472B6' },
-            { offset: 1, color: '#FBCFE8' }
-          ]),
-          borderRadius: [4, 4, 0, 0]
-        }
-      }
-    ]
-  })
-}
-
-onMounted(() => {
-  loadData()
-  window.addEventListener('resize', () => chartInstance?.resize())
+  disposeComfortChart()
 })
 </script>
 

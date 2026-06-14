@@ -630,104 +630,59 @@
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick } from 'vue'
-import * as echarts from 'echarts'
+import { computed, onMounted } from 'vue'
 import {
-  getStatsOverview, getBrandComfort, getWaterContentFit,
-  getPurposeStats, getEyeTips, getCareStats, getCareMethodComfort
-} from '@/api/stats'
-import { getOutfitPlanStats } from '@/api/outfitPlan'
-import { getUnusedLenses, getLensList } from '@/api/lens'
-import { getRecordList } from '@/api/record'
-import { getBudgetStats, getBudgetMonthlySummary } from '@/api/budget'
-import { getTravelPlanStats } from '@/api/travel'
+  useStatisticsData,
+  calcBadRate,
+  getBadRateClass,
+} from '@/composables/useStatisticsData'
 import {
   formatDate, getComfortClass, CARE_STATUS_MAP, CARE_TYPE_OPTIONS,
-  RESTOCK_PRIORITY_MAP, TRAVEL_STATUS_MAP, TRAVEL_RISK_LEVEL_MAP,
-  TRAVEL_SUPPLY_TYPE_MAP, TRAVEL_ALERT_TYPE_MAP, TRAVEL_ALERT_SEVERITY_MAP
+  TRAVEL_STATUS_MAP, TRAVEL_SUPPLY_TYPE_MAP, TRAVEL_ALERT_TYPE_MAP,
 } from '@/utils/constants'
 
-const overview = ref({})
-const brandStats = ref([])
-const waterStats = ref([])
-const purposeStats = ref([])
-const unusedLenses = ref([])
-const tips = ref([])
-const allRecords = ref([])
-const allLenses = ref([])
-const careStats = ref({})
-const careMethodComfort = ref([])
-const outfitStats = ref({})
-const budgetStats = ref({})
-const budgetLimit = ref(500)
-const travelStats = ref({})
+const {
+  blocks,
+  budgetLimit,
+  lensHoursList,
+  charts,
+  loadAll,
+  renderAllCharts,
+} = useStatisticsData()
 
-const brandChartRef = ref(null)
-const waterChartRef = ref(null)
-const purposeChartRef = ref(null)
-const hoursPieRef = ref(null)
-const careMethodChartRef = ref(null)
-const reminderChartRef = ref(null)
-let brandChart = null, waterChart = null, purposeChart = null, hoursPieChart = null
-let careMethodChart = null, reminderChart = null
-let makeupStyleChart = null, sceneLensChart = null, matchScoreChart = null, tagStatsChart = null
-let budgetMonthlyTrendChart = null, brandValueChart = null
-let travelLensChart = null, travelComfortChart = null, travelAlertChart = null, travelSupplyChart = null
+const overview = computed(() => blocks.overview.data.value || {})
+const brandStats = computed(() => blocks.brandStats.data.value || [])
+const waterStats = computed(() => blocks.waterStats.data.value || [])
+const purposeStats = computed(() => blocks.purposeStats.data.value || [])
+const unusedLenses = computed(() => blocks.unusedLenses.data.value || [])
+const tips = computed(() => blocks.tips.data.value || [])
+const allRecords = computed(() => blocks.allRecords.data.value || [])
+const allLenses = computed(() => blocks.allLenses.data.value || [])
+const careStats = computed(() => blocks.careStats.data.value || {})
+const careMethodComfort = computed(() => blocks.careMethodComfort.data.value || [])
+const outfitStats = computed(() => blocks.outfitStats.data.value || {})
+const budgetStats = computed(() => blocks.budgetStats.data.value || {})
+const travelStats = computed(() => blocks.travelStats.data.value || {})
 
-const makeupChartRef = ref(null)
-const sceneLensChartRef = ref(null)
-const matchScoreChartRef = ref(null)
-const tagStatsChartRef = ref(null)
-const budgetMonthlyTrendChartRef = ref(null)
-const brandValueChartRef = ref(null)
-const travelLensChartRef = ref(null)
-const travelComfortChartRef = ref(null)
-const travelAlertChartRef = ref(null)
-const travelSupplyChartRef = ref(null)
+const brandChartRef = charts.brand.chartRef
+const waterChartRef = charts.water.chartRef
+const purposeChartRef = charts.purpose.chartRef
+const hoursPieRef = charts.hoursPie.chartRef
+const careMethodChartRef = charts.careMethod.chartRef
+const reminderChartRef = charts.reminder.chartRef
+const makeupChartRef = charts.makeup.chartRef
+const sceneLensChartRef = charts.sceneLens.chartRef
+const matchScoreChartRef = charts.matchScore.chartRef
+const tagStatsChartRef = charts.tagStats.chartRef
+const budgetMonthlyTrendChartRef = charts.budgetTrend.chartRef
+const brandValueChartRef = charts.brandValue.chartRef
+const travelLensChartRef = charts.travelLens.chartRef
+const travelComfortChartRef = charts.travelComfort.chartRef
+const travelAlertChartRef = charts.travelAlert.chartRef
+const travelSupplyChartRef = charts.travelSupply.chartRef
 
-const lensHoursList = ref([])
-
-const REMINDER_TYPE_LABELS = {
-  care: '护理提醒',
-  replacement: '更换提醒',
-  checkup: '复查提醒',
-  rest: '停戴提醒',
-  risk: '风险提醒'
-}
-
-const calcBadRate = (w) => {
-  if (!w.total_records) return 0
-  const badReactions = ['dryness', 'redness', 'fatigue', 'dryness_redness', 'dryness_fatigue', 'redness_fatigue', 'all']
-  let badCount = 0
-  w.reactions.forEach(r => {
-    if (badReactions.includes(r.eye_reaction)) badCount += r.count
-  })
-  return Math.round(badCount / w.total_records * 100)
-}
-
-const getBadRateClass = (w) => {
-  const rate = calcBadRate(w)
-  if (rate > 50) return 'tag-red'
-  if (rate > 30) return 'tag-yellow'
-  return 'tag-green'
-}
-
-const calcCareBadRate = (c) => {
-  if (!c.total_records) return 0
-  const badReactions = ['dryness', 'redness', 'fatigue', 'dryness_redness', 'dryness_fatigue', 'redness_fatigue', 'all']
-  let badCount = 0
-  c.reactions?.forEach(r => {
-    if (badReactions.includes(r.eye_reaction)) badCount += r.count
-  })
-  return Math.round(badCount / c.total_records * 100)
-}
-
-const getCareBadRateClass = (c) => {
-  const rate = calcCareBadRate(c)
-  if (rate > 50) return 'tag-red'
-  if (rate > 30) return 'tag-yellow'
-  return 'tag-green'
-}
+const calcCareBadRate = calcBadRate
+const getCareBadRateClass = getBadRateClass
 
 const getUnusedDays = (lens) => {
   const refDate = lens.last_wear_date ? new Date(lens.last_wear_date) : new Date(lens.created_at)
@@ -744,559 +699,11 @@ const getCareTypeLabel = (type) => {
   return opt ? opt.label : type
 }
 
-const loadData = async () => {
-  try {
-    const [ov, brands, waters, purposes, unused, tps, records, lenses, care, careMethod, outfitSt, budgetSt, travelSt] = await Promise.all([
-      getStatsOverview(),
-      getBrandComfort(),
-      getWaterContentFit(),
-      getPurposeStats(),
-      getUnusedLenses(90),
-      getEyeTips(),
-      getRecordList({ page_size: 1000 }),
-      getLensList(),
-      getCareStats(),
-      getCareMethodComfort(),
-      getOutfitPlanStats(),
-      getBudgetStats({ limit: budgetLimit.value }).catch(() => ({})),
-      getTravelPlanStats().catch(() => ({}))
-    ])
-    overview.value = ov
-    brandStats.value = Array.isArray(brands) ? brands : []
-    waterStats.value = Array.isArray(waters) ? waters : []
-    purposeStats.value = Array.isArray(purposes) ? purposes : []
-    unusedLenses.value = Array.isArray(unused) ? unused : (unused.results || [])
-    tips.value = Array.isArray(tps) ? tps : []
-    allRecords.value = Array.isArray(records) ? records : (records.results || [])
-    allLenses.value = Array.isArray(lenses) ? lenses : (lenses.results || [])
-    careStats.value = care || {}
-    careMethodComfort.value = Array.isArray(careMethod) ? careMethod : []
-    outfitStats.value = outfitSt || {}
-    budgetStats.value = budgetSt || {}
-    travelStats.value = travelSt || {}
-
-    const hoursMap = {}
-    allRecords.value.forEach(r => {
-      const lens = allLenses.value.find(l => l.id === r.lens)
-      const name = lens ? `${lens.brand} ${lens.model_name || ''}` : `镜片#${r.lens}`
-      hoursMap[name] = (hoursMap[name] || 0) + r.duration_hours
-    })
-    lensHoursList.value = Object.entries(hoursMap)
-      .map(([name, hours]) => ({ name, value: Number(hours.toFixed(1)) }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 10)
-
-    await nextTick()
-    renderBrandChart()
-    renderWaterChart()
-    renderPurposeChart()
-    renderHoursPie()
-    renderCareMethodChart()
-    renderReminderChart()
-    renderMakeupStyleChart()
-    renderSceneLensChart()
-    renderMatchScoreChart()
-    renderTagStatsChart()
-    renderBudgetMonthlyTrendChart()
-    renderBrandValueChart()
-    renderTravelLensChart()
-    renderTravelComfortChart()
-    renderTravelAlertChart()
-    renderTravelSupplyChart()
-  } catch (e) {
-    console.error(e)
-  }
-}
-
-const renderBrandChart = () => {
-  if (!brandChartRef.value || !brandStats.value.length) return
-  if (!brandChart) brandChart = echarts.init(brandChartRef.value)
-  brandChart.setOption({
-    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-    grid: { left: 100, right: 50, top: 20, bottom: 30 },
-    xAxis: { type: 'value', min: 0, max: 5, name: '舒适度' },
-    yAxis: {
-      type: 'category',
-      data: [...brandStats.value].reverse().map(b => b.brand)
-    },
-    series: [{
-      type: 'bar',
-      data: [...brandStats.value].reverse().map(b => ({
-        value: b.avg_comfort,
-        itemStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-            { offset: 0, color: '#A78BFA' },
-            { offset: 1, color: '#8B5CF6' }
-          ]),
-          borderRadius: [0, 8, 8, 0]
-        }
-      })),
-      label: { show: true, position: 'right', formatter: p => p.value + ' ⭐' },
-      barWidth: 20
-    }]
-  })
-}
-
-const renderWaterChart = () => {
-  if (!waterChartRef.value || !waterStats.value.length) return
-  if (!waterChart) waterChart = echarts.init(waterChartRef.value)
-  const data = waterStats.value.filter(w => w.total_records > 0)
-  waterChart.setOption({
-    tooltip: { trigger: 'axis' },
-    legend: { data: ['平均舒适度', '佩戴次数'], top: 0 },
-    grid: { left: 50, right: 60, top: 40, bottom: 30 },
-    xAxis: { type: 'category', data: data.map(w => w.range) },
-    yAxis: [
-      { type: 'value', min: 0, max: 5, name: '舒适度' },
-      { type: 'value', name: '次数' }
-    ],
-    series: [
-      {
-        name: '平均舒适度',
-        type: 'bar',
-        data: data.map(w => w.avg_comfort),
-        itemStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: '#60A5FA' },
-            { offset: 1, color: '#3B82F6' }
-          ]),
-          borderRadius: [6, 6, 0, 0]
-        },
-        label: { show: true, position: 'top' }
-      },
-      {
-        name: '佩戴次数',
-        type: 'line',
-        yAxisIndex: 1,
-        data: data.map(w => w.total_records),
-        smooth: true,
-        itemStyle: { color: '#F472B6' },
-        lineStyle: { width: 3 }
-      }
-    ]
-  })
-}
-
-const renderPurposeChart = () => {
-  if (!purposeChartRef.value || !purposeStats.value.length) return
-  if (!purposeChart) purposeChart = echarts.init(purposeChartRef.value)
-  const labels = { daily: '日常', date: '约会', photo: '拍照' }
-  const colors = { daily: '#8B5CF6', date: '#F472B6', photo: '#3B82F6' }
-  purposeChart.setOption({
-    tooltip: { trigger: 'item', formatter: p => `${p.name}<br/>时长: ${p.value}h (${p.percent}%)` },
-    legend: { bottom: 0 },
-    series: [
-      {
-        type: 'pie',
-        radius: ['35%', '65%'],
-        center: ['40%', '45%'],
-        itemStyle: { borderRadius: 8, borderColor: '#fff', borderWidth: 3 },
-        label: { formatter: '{b}\n{d}%' },
-        data: purposeStats.value.filter(p => p.total_hours > 0).map(p => ({
-          name: labels[p.purpose] || p.purpose,
-          value: p.total_hours,
-          itemStyle: { color: colors[p.purpose] }
-        }))
-      }
-    ]
-  })
-}
-
-const renderHoursPie = () => {
-  if (!hoursPieRef.value || !lensHoursList.value.length) return
-  if (!hoursPieChart) hoursPieChart = echarts.init(hoursPieRef.value)
-  hoursPieChart.setOption({
-    tooltip: { trigger: 'item', formatter: p => `${p.name}<br/>${p.value}h (${p.percent}%)` },
-    legend: { type: 'scroll', bottom: 0, textStyle: { fontSize: 11 } },
-    series: [{
-      type: 'pie',
-      radius: ['30%', '60%'],
-      center: ['50%', '45%'],
-      roseType: 'radius',
-      itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
-      label: { show: false },
-      data: lensHoursList.value
-    }]
-  })
-}
-
-const renderCareMethodChart = () => {
-  if (!careMethodChartRef.value || !careMethodComfort.value.length) return
-  if (!careMethodChart) careMethodChart = echarts.init(careMethodChartRef.value)
-  const data = careMethodComfort.value.filter(c => c.total_records > 0)
-  careMethodChart.setOption({
-    tooltip: { trigger: 'axis' },
-    legend: { data: ['平均舒适度', '不适率(%)'], top: 0 },
-    grid: { left: 90, right: 60, top: 40, bottom: 30 },
-    xAxis: { type: 'value', min: 0, max: 5, name: '舒适度' },
-    yAxis: {
-      type: 'category',
-      data: [...data].reverse().map(c => c.care_method_display || c.care_method)
-    },
-    series: [
-      {
-        name: '平均舒适度',
-        type: 'bar',
-        data: [...data].reverse().map(c => c.avg_comfort),
-        itemStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-            { offset: 0, color: '#34D399' },
-            { offset: 1, color: '#10B981' }
-          ]),
-          borderRadius: [0, 8, 8, 0]
-        },
-        label: { show: true, position: 'right', formatter: p => p.value + ' ⭐' },
-        barWidth: 18
-      }
-    ]
-  })
-}
-
-const renderReminderChart = () => {
-  if (!reminderChartRef.value || !Object.keys(careStats.value.reminder_type_stats || {}).length) return
-  if (!reminderChart) reminderChart = echarts.init(reminderChartRef.value)
-  const data = Object.entries(careStats.value.reminder_type_stats || {}).map(([type, count]) => ({
-    name: REMINDER_TYPE_LABELS[type] || type,
-    value: count
-  }))
-  const colors = ['#60A5FA', '#F59E0B', '#EF4444', '#8B5CF6', '#F472B6']
-  reminderChart.setOption({
-    tooltip: { trigger: 'item', formatter: p => `${p.name}<br/>${p.value}条 (${p.percent}%)` },
-    legend: { bottom: 0 },
-    series: [{
-      type: 'pie',
-      radius: ['40%', '70%'],
-      center: ['50%', '45%'],
-      itemStyle: { borderRadius: 8, borderColor: '#fff', borderWidth: 3 },
-      label: { formatter: '{b}\n{d}%' },
-      data: data.map((d, i) => ({
-        ...d,
-        itemStyle: { color: colors[i % colors.length] }
-      }))
-    }]
-  })
-}
-
-const renderMakeupStyleChart = () => {
-  if (!makeupChartRef.value || !outfitStats.value.top_makeup_styles?.length) return
-  if (!makeupStyleChart) makeupStyleChart = echarts.init(makeupChartRef.value)
-  const data = [...outfitStats.value.top_makeup_styles].reverse().slice(0, 10)
-  makeupStyleChart.setOption({
-    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-    grid: { left: 120, right: 40, top: 20, bottom: 30 },
-    xAxis: { type: 'value', name: '次数' },
-    yAxis: { type: 'category', data: data.map(d => d.style) },
-    series: [{
-      type: 'bar',
-      data: data.map(d => ({
-        value: d.count,
-        itemStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-            { offset: 0, color: '#F472B6' },
-            { offset: 1, color: '#EC4899' }
-          ]),
-          borderRadius: [0, 8, 8, 0]
-        }
-      })),
-      label: { show: true, position: 'right' },
-      barWidth: 20
-    }]
-  })
-}
-
-const renderSceneLensChart = () => {
-  if (!sceneLensChartRef.value || !outfitStats.value.lens_usage_by_scene?.length) return
-  if (!sceneLensChart) sceneLensChart = echarts.init(sceneLensChartRef.value)
-  const data = outfitStats.value.lens_usage_by_scene.slice(0, 10)
-  const scenes = [...new Set(data.map(d => d.scene))]
-  const lenses = [...new Set(data.map(d => d.lens))]
-  
-  const series = lenses.map(lens => ({
-    name: lens,
-    type: 'bar',
-    stack: 'total',
-    data: scenes.map(scene => {
-      const item = data.find(d => d.scene === scene && d.lens === lens)
-      return item ? item.count : 0
-    })
-  }))
-
-  sceneLensChart.setOption({
-    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-    legend: { type: 'scroll', bottom: 0, textStyle: { fontSize: 11 } },
-    grid: { left: 80, right: 30, top: 40, bottom: 60 },
-    xAxis: { type: 'category', data: scenes, axisLabel: { fontSize: 11, rotate: 30 } },
-    yAxis: { type: 'value', name: '使用次数' },
-    series: series
-  })
-}
-
-const renderMatchScoreChart = () => {
-  if (!matchScoreChartRef.value || !outfitStats.value.match_score_ranking?.length) return
-  if (!matchScoreChart) matchScoreChart = echarts.init(matchScoreChartRef.value)
-  const data = [...outfitStats.value.match_score_ranking].reverse().slice(0, 10)
-  matchScoreChart.setOption({
-    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-    grid: { left: 120, right: 40, top: 20, bottom: 30 },
-    xAxis: { type: 'value', min: 0, max: 5, name: '搭配评分' },
-    yAxis: { type: 'category', data: data.map(d => `${d.scene} - ${d.lens}`) },
-    series: [{
-      type: 'bar',
-      data: data.map(d => ({
-        value: d.match_score,
-        itemStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-            { offset: 0, color: '#FBBF24' },
-            { offset: 1, color: '#F59E0B' }
-          ]),
-          borderRadius: [0, 8, 8, 0]
-        }
-      })),
-      label: { show: true, position: 'right', formatter: p => p.value + ' ⭐' },
-      barWidth: 20
-    }]
-  })
-}
-
-const renderTagStatsChart = () => {
-  if (!tagStatsChartRef.value || !Object.keys(outfitStats.value.tag_stats || {}).length) return
-  if (!tagStatsChart) tagStatsChart = echarts.init(tagStatsChartRef.value)
-  const data = Object.entries(outfitStats.value.tag_stats || {})
-    .filter(([_, v]) => v.count > 0)
-    .map(([key, val]) => ({ name: val.label, value: val.count }))
-  
-  const colors = ['#EF4444', '#F59E0B', '#10B981', '#EC4899', '#8B5CF6', '#F97316', '#3B82F6']
-  
-  tagStatsChart.setOption({
-    tooltip: { trigger: 'item', formatter: p => `${p.name}<br/>${p.value}条 (${p.percent}%)` },
-    legend: { type: 'scroll', bottom: 0, textStyle: { fontSize: 11 } },
-    series: [{
-      type: 'pie',
-      radius: ['35%', '65%'],
-      center: ['50%', '45%'],
-      itemStyle: { borderRadius: 8, borderColor: '#fff', borderWidth: 3 },
-      label: { formatter: '{b}\n{d}%', fontSize: 11 },
-      data: data.map((d, i) => ({
-        ...d,
-        itemStyle: { color: colors[i % colors.length] }
-      }))
-    }]
-  })
-}
-
-const renderBudgetMonthlyTrendChart = () => {
-  if (!budgetMonthlyTrendChartRef.value || !budgetStats.value.monthly_trend?.length) return
-  if (!budgetMonthlyTrendChart) budgetMonthlyTrendChart = echarts.init(budgetMonthlyTrendChartRef.value)
-  const data = budgetStats.value.monthly_trend
-  budgetMonthlyTrendChart.setOption({
-    tooltip: { trigger: 'axis' },
-    legend: { data: ['消费金额', '采购次数'], top: 0 },
-    grid: { left: 50, right: 60, top: 40, bottom: 40 },
-    xAxis: {
-      type: 'category',
-      data: data.map(d => d.month.slice(5) + '月'),
-      axisLabel: { fontSize: 11 }
-    },
-    yAxis: [
-      { type: 'value', name: '元' },
-      { type: 'value', name: '次' }
-    ],
-    series: [
-      {
-        name: '消费金额',
-        type: 'bar',
-        data: data.map(d => d.total_spent),
-        itemStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: '#8B5CF6' },
-            { offset: 1, color: '#A78BFA' }
-          ]),
-          borderRadius: [6, 6, 0, 0]
-        }
-      },
-      {
-        name: '采购次数',
-        type: 'line',
-        yAxisIndex: 1,
-        data: data.map(d => d.purchase_count),
-        smooth: true,
-        itemStyle: { color: '#F472B6' },
-        lineStyle: { width: 3 }
-      }
-    ]
-  })
-}
-
-const renderBrandValueChart = () => {
-  if (!brandValueChartRef.value || !budgetStats.value.brand_value_ranking?.length) return
-  if (!brandValueChart) brandValueChart = echarts.init(brandValueChartRef.value)
-  const data = budgetStats.value.brand_value_ranking.slice(0, 8).reverse()
-  brandValueChart.setOption({
-    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-    legend: { data: ['性价比评分', '平均舒适度'], top: 0 },
-    grid: { left: 120, right: 50, top: 40, bottom: 30 },
-    xAxis: [
-      { type: 'value', min: 0, max: 10, name: '评分' },
-      { type: 'value', min: 0, max: 5, name: '舒适度' }
-    ],
-    yAxis: {
-      type: 'category',
-      data: data.map(d => `${d.brand} ${d.model}`),
-      axisLabel: { fontSize: 11 }
-    },
-    series: [
-      {
-        name: '性价比评分',
-        type: 'bar',
-        data: data.map(d => d.value_score),
-        itemStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-            { offset: 0, color: '#FBBF24' },
-            { offset: 1, color: '#F59E0B' }
-          ]),
-          borderRadius: [0, 8, 8, 0]
-        },
-        label: { show: true, position: 'right' },
-        barWidth: 14
-      },
-      {
-        name: '平均舒适度',
-        type: 'bar',
-        xAxisIndex: 1,
-        data: data.map(d => d.avg_comfort),
-        itemStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-            { offset: 0, color: '#34D399' },
-            { offset: 1, color: '#10B981' }
-          ]),
-          borderRadius: [0, 8, 8, 0]
-        },
-        barWidth: 14
-      }
-    ]
-  })
-}
-
-const renderTravelLensChart = () => {
-  if (!travelLensChartRef.value || !travelStats.value.lens_usage_ranking?.length) return
-  if (!travelLensChart) travelLensChart = echarts.init(travelLensChartRef.value)
-  const data = travelStats.value.lens_usage_ranking.slice(0, 8).reverse()
-  travelLensChart.setOption({
-    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-    grid: { left: 120, right: 50, top: 20, bottom: 30 },
-    xAxis: { type: 'value', name: '使用次数' },
-    yAxis: {
-      type: 'category',
-      data: data.map(d => d.brand ? `${d.brand} ${d.model || ''}` : `镜片#${d.lens_id}`),
-      axisLabel: { fontSize: 11 }
-    },
-    series: [{
-      type: 'bar',
-      data: data.map(d => d.count || d.travel_count || 0),
-      itemStyle: {
-        color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-          { offset: 0, color: '#818CF8' },
-          { offset: 1, color: #6366F1' }
-        ]),
-        borderRadius: [0, 8, 8, 0]
-      },
-      label: { show: true, position: 'right', formatter: p => p.value + ' 次' },
-      barWidth: 16
-    }]
-  })
-}
-
-const renderTravelComfortChart = () => {
-  if (!travelComfortChartRef.value || !travelStats.value.comfort_ranking?.length) return
-  if (!travelComfortChart) travelComfortChart = echarts.init(travelComfortChartRef.value)
-  const data = travelStats.value.comfort_ranking.slice(0, 8).reverse()
-  travelComfortChart.setOption({
-    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-    grid: { left: 120, right: 50, top: 20, bottom: 30 },
-    xAxis: { type: 'value', min: 0, max: 5, name: '舒适度' },
-    yAxis: {
-      type: 'category',
-      data: data.map(d => d.brand ? `${d.brand} ${d.model || ''}` : `镜片#${d.lens_id}`),
-      axisLabel: { fontSize: 11 }
-    },
-    series: [{
-      type: 'bar',
-      data: data.map(d => d.avg_comfort || 0),
-      itemStyle: {
-        color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-          { offset: 0, color: '#F472B6' },
-          { offset: 1, color: '#EC4899' }
-        ]),
-        borderRadius: [0, 8, 8, 0]
-      },
-      label: { show: true, position: 'right', formatter: p => p.value + ' ⭐' },
-      barWidth: 16
-    }]
-  })
-}
-
-const renderTravelAlertChart = () => {
-  const stats = travelStats.value.alert_type_stats || {}
-  if (!travelAlertChartRef.value || !Object.keys(stats).length) return
-  if (!travelAlertChart) travelAlertChart = echarts.init(travelAlertChartRef.value)
-  const data = Object.entries(stats).map(([type, count]) => ({
-    name: TRAVEL_ALERT_TYPE_MAP[type]?.label || type,
-    value: count,
-    itemStyle: { color: TRAVEL_ALERT_TYPE_MAP[type]?.color || '#6366F1' }
-  }))
-  travelAlertChart.setOption({
-    tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
-    legend: { bottom: 0, type: 'scroll' },
-    series: [{
-      type: 'pie',
-      radius: ['40%', '65%'],
-      center: ['50%', '45%'],
-      avoidLabelOverlap: true,
-      label: { show: true, formatter: '{b}\n{c}个' },
-      data: data
-    }]
-  })
-}
-
-const renderTravelSupplyChart = () => {
-  const stats = travelStats.value.common_supplies || []
-  if (!travelSupplyChartRef.value || !stats.length) return
-  if (!travelSupplyChart) travelSupplyChart = echarts.init(travelSupplyChartRef.value)
-  const data = stats.slice(0, 10).reverse()
-  travelSupplyChart.setOption({
-    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-    grid: { left: 100, right: 50, top: 20, bottom: 30 },
-    xAxis: { type: 'value', name: '携带次数' },
-    yAxis: {
-      type: 'category',
-      data: data.map(d => TRAVEL_SUPPLY_TYPE_MAP[d.supply_type]?.label || d.supply_type || d.custom_name || '其他')
-    },
-    series: [{
-      type: 'bar',
-      data: data.map(d => d.count || 0),
-      itemStyle: {
-        color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-          { offset: 0, color: '#34D399' },
-          { offset: 1, color: '#10B981' }
-        ]),
-        borderRadius: [0, 8, 8, 0]
-      },
-      label: { show: true, position: 'right', formatter: p => p.value + ' 次' },
-      barWidth: 14
-    }]
-  })
-}
-
 onMounted(async () => {
-  await loadData()
-  window.addEventListener('resize', () => {
-    brandChart?.resize(); waterChart?.resize(); purposeChart?.resize(); hoursPieChart?.resize()
-    careMethodChart?.resize(); reminderChart?.resize()
-    makeupStyleChart?.resize(); sceneLensChart?.resize()
-    matchScoreChart?.resize(); tagStatsChart?.resize()
-    budgetMonthlyTrendChart?.resize(); brandValueChart?.resize()
-    travelLensChart?.resize(); travelComfortChart?.resize()
-    travelAlertChart?.resize(); travelSupplyChart?.resize()
+  await loadAll()
+  await renderAllCharts({
+    alertTypeMap: TRAVEL_ALERT_TYPE_MAP,
+    supplyTypeMap: TRAVEL_SUPPLY_TYPE_MAP,
   })
 })
 </script>
