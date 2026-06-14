@@ -834,6 +834,12 @@ class OutfitPlanViewSet(viewsets.ModelViewSet):
         if wear_record_id:
             try:
                 wear_record = WearRecord.objects.get(pk=wear_record_id)
+                existing_plan = OutfitPlan.objects.filter(wear_record=wear_record).exclude(pk=plan.pk).first()
+                if existing_plan:
+                    return Response(
+                        {'error': f'该佩戴记录已被「{existing_plan.get_scene_name_display()}」方案使用，无法重复关联'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
             except WearRecord.DoesNotExist:
                 pass
 
@@ -854,12 +860,22 @@ class OutfitPlanViewSet(viewsets.ModelViewSet):
         plan = self.get_object()
         wear_record_id = request.data.get('wear_record_id')
         if not wear_record_id:
-            return Response({'error': 'wear_record_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': '请选择佩戴记录'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if plan.status != 'completed':
+            return Response({'error': '只有已执行的计划才能关联佩戴记录'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             wear_record = WearRecord.objects.get(pk=wear_record_id)
         except WearRecord.DoesNotExist:
-            return Response({'error': 'WearRecord not found'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'error': '佩戴记录不存在'}, status=status.HTTP_404_NOT_FOUND)
+
+        existing_plan = OutfitPlan.objects.filter(wear_record=wear_record).exclude(pk=plan.pk).first()
+        if existing_plan:
+            return Response(
+                {'error': f'该佩戴记录已被「{existing_plan.get_scene_name_display()}」方案使用，无法重复关联'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         plan.wear_record = wear_record
         plan.update_tags()

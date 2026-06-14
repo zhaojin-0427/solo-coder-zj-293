@@ -18,6 +18,10 @@
           <span class="nav-icon">📝</span>
           <span>佩戴记录</span>
         </router-link>
+        <router-link to="/outfit-plans" class="nav-item" active-class="active">
+          <span class="nav-icon">💄</span>
+          <span>妆容搭配计划</span>
+        </router-link>
         <router-link to="/comfort" class="nav-item" active-class="active">
           <span class="nav-icon">😊</span>
           <span>舒适度追踪</span>

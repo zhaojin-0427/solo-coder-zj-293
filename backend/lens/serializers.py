@@ -86,6 +86,7 @@ class WearRecordSerializer(serializers.ModelSerializer):
     lens_brand = serializers.CharField(source='lens.brand', read_only=True, default='')
     lens_model = serializers.CharField(source='lens.model_name', read_only=True, default='')
     lens_color = serializers.CharField(source='lens.color', read_only=True, default='')
+    outfit_plan = serializers.PrimaryKeyRelatedField(read_only=True, default=None)
 
     class Meta:
         model = WearRecord

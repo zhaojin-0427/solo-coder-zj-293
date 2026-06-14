@@ -656,6 +656,11 @@ const handleMarkCompleted = async (plan) => {
     loadCalendarData()
   } catch (e) {
     console.error(e)
+    const errorMsg = e?.response?.data?.error
+      || e?.response?.data?.detail
+      || Object.values(e?.response?.data || {}).flat().join('; ')
+      || '操作失败，请重试'
+    alert(`标记失败：${errorMsg}`)
   }
 }
 
@@ -686,6 +691,11 @@ const handleLinkRecord = async () => {
     loadPlans()
   } catch (e) {
     console.error(e)
+    const errorMsg = e?.response?.data?.error
+      || e?.response?.data?.detail
+      || Object.values(e?.response?.data || {}).flat().join('; ')
+      || '关联失败，请重试'
+    alert(`关联失败：${errorMsg}`)
   }
 }
 
