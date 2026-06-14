@@ -595,3 +595,471 @@ class RestockSuggestion(models.Model):
 
     def __str__(self):
         return f'[{self.get_severity_display()}] {self.title}'
+
+
+class TravelPlan(models.Model):
+    CLIMATE_CHOICES = [
+        ('tropical_humid', '热带潮湿'),
+        ('subtropical_humid', '亚热带潮湿'),
+        ('temperate', '温带温和'),
+        ('dry_hot', '干燥炎热'),
+        ('cold_dry', '寒冷干燥'),
+        ('highland', '高原高海拔'),
+        ('marine', '海洋性气候'),
+        ('variable', '气候多变'),
+    ]
+
+    TRANSPORT_CHOICES = [
+        ('airplane', '飞机'),
+        ('train', '火车/高铁'),
+        ('car', '自驾'),
+        ('bus', '长途大巴'),
+        ('ship', '轮船/邮轮'),
+        ('mixed', '多种交通'),
+    ]
+
+    LUGGAGE_CHOICES = [
+        ('carry_on', '仅随身行李'),
+        ('checked_small', '托运行李(小件)'),
+        ('checked_large', '托运行李(大件)'),
+        ('no_limit', '无限制'),
+    ]
+
+    STATUS_CHOICES = [
+        ('planning', '计划中'),
+        ('upcoming', '即将出发'),
+        ('in_progress', '旅行中'),
+        ('completed', '已完成'),
+        ('cancelled', '已取消'),
+    ]
+
+    RISK_LEVEL_CHOICES = [
+        ('low', '低风险'),
+        ('medium', '中等风险'),
+        ('high', '高风险'),
+    ]
+
+    WEAR_SCENE_CHOICES = [
+        ('daily_sightseeing', '日常观光'),
+        ('outdoor_activity', '户外活动'),
+        ('beach_water', '海滩/水上活动'),
+        ('formal_event', '正式场合/宴会'),
+        ('photo_shoot', '拍照/写真'),
+        ('business_meeting', '商务会议'),
+        ('night_out', '夜生活/派对'),
+        ('sports', '运动'),
+        ('mixed', '混合场景'),
+    ]
+
+    name = models.CharField('旅行名称', max_length=200)
+    destination = models.CharField('目的地', max_length=200)
+    start_date = models.DateField('出发日期')
+    end_date = models.DateField('返回日期')
+    climate = models.CharField('气候环境', max_length=30, choices=CLIMATE_CHOICES, default='temperate')
+    transport = models.CharField('交通方式', max_length=30, choices=TRANSPORT_CHOICES, default='airplane')
+    luggage = models.CharField('行李限制', max_length=30, choices=LUGGAGE_CHOICES, default='carry_on')
+    planned_wear_scene = models.CharField('计划佩戴场景', max_length=30, choices=WEAR_SCENE_CHOICES, default='daily_sightseeing')
+    custom_wear_scene = models.CharField('自定义佩戴场景', max_length=100, blank=True, default='')
+    notes = models.TextField('备注', blank=True, default='')
+    status = models.CharField('状态', max_length=20, choices=STATUS_CHOICES, default='planning')
+    risk_level = models.CharField('风险等级', max_length=20, choices=RISK_LEVEL_CHOICES, default='low')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'travel_plan'
+        ordering = ['-start_date', '-created_at']
+        verbose_name = '旅行计划'
+        verbose_name_plural = verbose_name
+
+    def __str__(self):
+        return f'{self.name} - {self.destination}'
+
+    def get_duration_days(self):
+        return (self.end_date - self.start_date).days + 1
+
+    def get_wear_scene_display_name(self):
+        return self.custom_wear_scene or self.get_planned_wear_scene_display()
+
+    def get_status_info(self):
+        today = timezone.now().date()
+        if self.status == 'cancelled':
+            return {'key': 'cancelled', 'label': '已取消', 'class': 'tag-gray', 'icon': '❌'}
+        if self.status == 'completed':
+            return {'key': 'completed', 'label': '已完成', 'class': 'tag-green', 'icon': '✅'}
+        if today < self.start_date:
+            days_until = (self.start_date - today).days
+            if days_until <= 7:
+                return {'key': 'upcoming', 'label': f'即将出发({days_until}天后)', 'class': 'tag-yellow', 'icon': '⏰'}
+            return {'key': 'planning', 'label': f'计划中({days_until}天后)', 'class': 'tag-blue', 'icon': '📋'}
+        if today >= self.start_date and today <= self.end_date:
+            return {'key': 'in_progress', 'label': '旅行中', 'class': 'tag-pink', 'icon': '✈️'}
+        return {'key': 'completed', 'label': '已完成', 'class': 'tag-green', 'icon': '✅'}
+
+    def update_auto_status(self):
+        today = timezone.now().date()
+        if self.status in ['completed', 'cancelled']:
+            return
+        if today > self.end_date:
+            self.status = 'completed'
+        elif today >= self.start_date:
+            self.status = 'in_progress'
+        elif (self.start_date - today).days <= 7:
+            self.status = 'upcoming'
+        else:
+            self.status = 'planning'
+        self.save()
+
+    def calculate_risk_level(self):
+        risk_score = 0
+        high_risk_climates = ['dry_hot', 'highland', 'cold_dry']
+        if self.climate in high_risk_climates:
+            risk_score += 2
+
+        lens_items = self.lens_items.all()
+        total_pairs = sum(item.quantity for item in lens_items)
+        duration = self.get_duration_days()
+        if total_pairs < duration:
+            risk_score += 2
+        elif total_pairs < duration + 2:
+            risk_score += 1
+
+        has_care_solution = self.supplies.filter(supply_type='care_solution', is_checked=True).exists()
+        has_lens_case = self.supplies.filter(supply_type='lens_case', is_checked=True).exists()
+        has_eye_drops = self.supplies.filter(supply_type='eye_drops', is_checked=True).exists()
+
+        care_needed_lenses = lens_items.filter(lens__care_method__in=['hydrogen_peroxide', 'multi_purpose', 'other'])
+        if care_needed_lenses.exists() and not has_care_solution:
+            risk_score += 2
+        if care_needed_lenses.exists() and not has_lens_case:
+            risk_score += 1
+
+        if self.climate in ['dry_hot', 'highland'] and not has_eye_drops:
+            risk_score += 1
+
+        for item in lens_items:
+            if item.lens and item.lens.expiry_date <= self.end_date:
+                risk_score += 2
+
+        if risk_score >= 4:
+            self.risk_level = 'high'
+        elif risk_score >= 2:
+            self.risk_level = 'medium'
+        else:
+            self.risk_level = 'low'
+        self.save()
+        return self.risk_level
+
+    def generate_suggestions_and_risks(self):
+        suggestions = []
+        risks = []
+        today = timezone.now().date()
+        duration = self.get_duration_days()
+
+        if self.climate in ['dry_hot', 'highland']:
+            suggestions.append({
+                'type': 'climate',
+                'level': 'warning',
+                'title': '高温干燥地区建议减少佩戴',
+                'message': f'目的地「{self.destination}」气候较为干燥炎热，建议减少每日佩戴时长，多使用润眼液，准备框架眼镜作为替代。'
+            })
+            risks.append({
+                'type': 'climate_dry',
+                'level': 'warning',
+                'title': '干燥气候可能加重眼部干涩',
+                'message': '干燥环境下泪液蒸发加快，建议随身携带润眼液，每日佩戴不超过6小时。'
+            })
+
+        if self.climate == 'cold_dry':
+            suggestions.append({
+                'type': 'climate',
+                'level': 'info',
+                'title': '寒冷干燥地区佩戴建议',
+                'message': '室内外温差大，注意镜片适应，建议准备框架眼镜在室内交替佩戴。'
+            })
+
+        if self.climate in ['tropical_humid', 'subtropical_humid', 'marine']:
+            suggestions.append({
+                'type': 'climate',
+                'level': 'info',
+                'title': '潮湿地区护理提醒',
+                'message': '潮湿气候下细菌容易滋生，请严格按照护理流程清洁镜片，护理液开封后按时更换。'
+            })
+
+        lens_items = self.lens_items.all()
+        primary_items = lens_items.filter(role='primary')
+        backup_items = lens_items.filter(role='backup')
+
+        total_pairs = sum(item.quantity for item in lens_items)
+        if total_pairs == 0:
+            risks.append({
+                'type': 'no_lens',
+                'level': 'danger',
+                'title': '尚未添加携带镜片',
+                'message': '请从镜片库选择主带镜片和备用镜片添加到旅行方案中。'
+            })
+        elif total_pairs < duration:
+            risks.append({
+                'type': 'insufficient_lens',
+                'level': 'danger',
+                'title': '备用镜片不足',
+                'message': f'旅行共{duration}天，但仅携带{total_pairs}片镜片，建议至少携带{duration + 2}片以备不时之需。'
+            })
+        elif backup_items.count() == 0:
+            suggestions.append({
+                'type': 'backup',
+                'level': 'warning',
+                'title': '建议添加备用镜片',
+                'message': '旅行期间可能出现镜片丢失、破损等情况，建议至少准备1-2副备用镜片。'
+            })
+
+        for item in lens_items:
+            if not item.lens:
+                continue
+            lens = item.lens
+            if lens.expiry_date <= self.end_date:
+                days_left = (lens.expiry_date - self.start_date).days
+                risks.append({
+                    'type': 'expiry',
+                    'level': 'danger',
+                    'title': '旅行期间将过期',
+                    'message': f'镜片「{lens.brand} {lens.model_name}」将于{lens.expiry_date}过期，旅行第{max(1, days_left + 1)}天后失效，建议更换新镜片。',
+                    'lens_id': lens.id
+                })
+
+            if lens.open_date and lens.replacement_days_after_open:
+                days_open_at_start = (self.start_date - lens.open_date).days
+                if days_open_at_start >= lens.replacement_days_after_open:
+                    risks.append({
+                        'type': 'overdue_replacement',
+                        'level': 'danger',
+                        'title': '镜片已超过建议更换周期',
+                        'message': f'镜片「{lens.brand} {lens.model_name}」已开封{days_open_at_start}天，超过建议更换周期({lens.replacement_days_after_open}天)，建议更换新镜片。',
+                        'lens_id': lens.id
+                    })
+                elif days_open_at_start + duration > lens.replacement_days_after_open:
+                    suggestions.append({
+                        'type': 'replacement_during_trip',
+                        'level': 'warning',
+                        'title': '旅行期间需更换镜片',
+                        'message': f'镜片「{lens.brand} {lens.model_name}」在旅行第{lens.replacement_days_after_open - days_open_at_start + 1}天需更换，请备好替换镜片。',
+                        'lens_id': lens.id
+                    })
+
+            if lens.is_under_rest():
+                risks.append({
+                    'type': 'under_rest',
+                    'level': 'warning',
+                    'title': '镜片处于停戴观察期',
+                    'message': f'镜片「{lens.brand} {lens.model_name}」目前处于停戴观察期{"，至" + str(lens.rest_until_date) if lens.rest_until_date else ""}，建议不要携带或更换镜片。',
+                    'lens_id': lens.id
+                })
+
+            remaining = lens.get_remaining_stock()
+            if remaining < item.quantity:
+                risks.append({
+                    'type': 'insufficient_stock',
+                    'level': 'warning',
+                    'title': '库存不足',
+                    'message': f'镜片「{lens.brand} {lens.model_name}」剩余库存{remaining}片，少于计划携带的{item.quantity}片。',
+                    'lens_id': lens.id
+                })
+
+        care_needed = any(item.lens and item.lens.care_method in ['hydrogen_peroxide', 'multi_purpose', 'other'] for item in lens_items)
+        has_care_solution = self.supplies.filter(supply_type='care_solution', is_checked=True).exists()
+        has_lens_case = self.supplies.filter(supply_type='lens_case', is_checked=True).exists()
+        has_eye_drops = self.supplies.filter(supply_type='eye_drops', is_checked=True).exists()
+
+        if care_needed and not has_care_solution:
+            risks.append({
+                'type': 'missing_supply',
+                'level': 'danger',
+                'title': '护理用品未勾选',
+                'message': '携带的非日抛镜片需要护理液，请在随身用品中勾选并准备护理液。'
+            })
+
+        if care_needed and not has_lens_case:
+            risks.append({
+                'type': 'missing_supply',
+                'level': 'warning',
+                'title': '镜盒未勾选',
+                'message': '非日抛镜片需要镜盒存放，请在随身用品中勾选镜盒。'
+            })
+
+        if self.climate in ['dry_hot', 'highland', 'cold_dry'] and not has_eye_drops:
+            suggestions.append({
+                'type': 'missing_supply',
+                'level': 'warning',
+                'title': '建议携带润眼液',
+                'message': f'目的地气候较为{"干燥" if self.climate != "highland" else "高原"}，建议携带润眼液缓解眼部不适。'
+            })
+
+        if self.luggage == 'carry_on':
+            suggestions.append({
+                'type': 'luggage',
+                'level': 'info',
+                'title': '随身行李携带提醒',
+                'message': '随身行李液体通常限制为100ml以下，请将护理液分装或托运，确认航空公司规定。'
+            })
+
+        if self.transport in ['airplane', 'ship']:
+            suggestions.append({
+                'type': 'transport',
+                'level': 'info',
+                'title': '长途交通佩戴建议',
+                'message': '长途行程中客舱空气干燥，建议减少佩戴时长或佩戴框架眼镜，多眨眼保持眼部湿润。'
+            })
+
+        avg_comfort_map = {}
+        for item in lens_items:
+            if item.lens:
+                avg = item.lens.get_avg_comfort_level()
+                if avg is not None:
+                    avg_comfort_map[item.lens.id] = avg
+        low_comfort_lenses = [lid for lid, avg in avg_comfort_map.items() if avg <= 2]
+        if low_comfort_lenses:
+            for item in lens_items:
+                if item.lens and item.lens.id in low_comfort_lenses:
+                    suggestions.append({
+                        'type': 'comfort',
+                        'level': 'warning',
+                        'title': '历史舒适度偏低提醒',
+                        'message': f'镜片「{item.lens.brand} {item.lens.model_name}」历史平均舒适度仅{avg_comfort_map[item.lens.id]}分，旅行中长时间佩戴可能引起不适，建议备换。',
+                        'lens_id': item.lens.id
+                    })
+
+        daily_plans = self.daily_plans.all()
+        if daily_plans.exists():
+            total_planned_hours = sum(p.expected_duration_hours or 0 for p in daily_plans)
+            avg_daily_hours = total_planned_hours / len(daily_plans) if daily_plans else 0
+            if avg_daily_hours > 10:
+                risks.append({
+                    'type': 'long_hours',
+                    'level': 'warning',
+                    'title': '日均佩戴时长过长',
+                    'message': f'计划日均佩戴{avg_daily_hours:.1f}小时，超过建议上限(8小时)，建议减少每日佩戴时长，准备框架眼镜交替。'
+                })
+
+        return suggestions, risks
+
+
+class TravelLensItem(models.Model):
+    ROLE_CHOICES = [
+        ('primary', '主带镜片'),
+        ('backup', '备用镜片'),
+        ('special', '特殊场景用'),
+    ]
+
+    travel_plan = models.ForeignKey(TravelPlan, on_delete=models.CASCADE, related_name='lens_items', verbose_name='旅行计划')
+    lens = models.ForeignKey(Lens, on_delete=models.SET_NULL, null=True, blank=True, related_name='travel_items', verbose_name='镜片')
+    role = models.CharField('角色', max_length=20, choices=ROLE_CHOICES, default='primary')
+    quantity = models.IntegerField('携带数量(片)', default=2)
+    notes = models.TextField('备注', blank=True, default='')
+    order_index = models.IntegerField('排序', default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'travel_lens_item'
+        ordering = ['order_index', 'created_at']
+        verbose_name = '旅行携带镜片'
+        verbose_name_plural = verbose_name
+
+    def __str__(self):
+        lens_name = f'{self.lens.brand} {self.lens.model_name}' if self.lens else '未指定'
+        return f'{self.get_role_display()} - {lens_name}'
+
+
+class TravelSupplyItem(models.Model):
+    SUPPLY_TYPE_CHOICES = [
+        ('care_solution', '护理液'),
+        ('lens_case', '镜盒'),
+        ('eye_drops', '润眼液/人工泪液'),
+        ('hand_sanitizer', '洗手液'),
+        ('tweezers', '镊子'),
+        ('glasses', '框架眼镜'),
+        ('saline', '生理盐水'),
+        ('wet_wipes', '湿纸巾'),
+        ('sunglasses', '太阳镜'),
+        ('prescription_sunglasses', '有度数太阳镜'),
+        ('other', '其他用品'),
+    ]
+
+    travel_plan = models.ForeignKey(TravelPlan, on_delete=models.CASCADE, related_name='supplies', verbose_name='旅行计划')
+    supply_type = models.CharField('用品类型', max_length=30, choices=SUPPLY_TYPE_CHOICES)
+    custom_name = models.CharField('自定义名称', max_length=100, blank=True, default='')
+    is_checked = models.BooleanField('是否已准备', default=False)
+    quantity = models.CharField('数量/规格', max_length=100, blank=True, default='')
+    notes = models.TextField('备注', blank=True, default='')
+    order_index = models.IntegerField('排序', default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'travel_supply_item'
+        ordering = ['order_index', 'created_at']
+        verbose_name = '旅行随身用品'
+        verbose_name_plural = verbose_name
+
+    def __str__(self):
+        name = self.custom_name or self.get_supply_type_display()
+        return f'{name} - {self.get_is_checked_display()}'
+
+    def get_supply_display_name(self):
+        return self.custom_name or self.get_supply_type_display()
+
+
+class TravelDailyPlan(models.Model):
+    travel_plan = models.ForeignKey(TravelPlan, on_delete=models.CASCADE, related_name='daily_plans', verbose_name='旅行计划')
+    plan_date = models.DateField('日期')
+    day_label = models.CharField('行程第几天', max_length=50, blank=True, default='')
+    planned_activity = models.CharField('当日主要活动', max_length=200, blank=True, default='')
+    expected_wear_lens = models.ForeignKey(Lens, on_delete=models.SET_NULL, null=True, blank=True, related_name='+', verbose_name='计划佩戴镜片')
+    expected_duration_hours = models.FloatField('预计佩戴时长(小时)', default=8.0)
+    notes = models.TextField('备注', blank=True, default='')
+    order_index = models.IntegerField('排序', default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'travel_daily_plan'
+        ordering = ['plan_date', 'order_index']
+        verbose_name = '旅行每日佩戴安排'
+        verbose_name_plural = verbose_name
+
+    def __str__(self):
+        return f'{self.plan_date} - {self.planned_activity or "未安排"}'
+
+
+class TravelRiskAlert(models.Model):
+    ALERT_TYPE_CHOICES = [
+        ('expiry', '有效期提醒'),
+        ('stock', '库存提醒'),
+        ('climate', '气候提醒'),
+        ('comfort', '舒适度提醒'),
+        ('supply', '用品提醒'),
+        ('care', '护理提醒'),
+        ('schedule', '行程提醒'),
+        ('other', '其他提醒'),
+    ]
+
+    SEVERITY_CHOICES = [
+        ('info', '提示'),
+        ('warning', '警告'),
+        ('danger', '危险'),
+    ]
+
+    travel_plan = models.ForeignKey(TravelPlan, on_delete=models.CASCADE, related_name='risk_alerts', verbose_name='旅行计划')
+    alert_type = models.CharField('提醒类型', max_length=30, choices=ALERT_TYPE_CHOICES)
+    severity = models.CharField('严重程度', max_length=20, choices=SEVERITY_CHOICES, default='info')
+    title = models.CharField('标题', max_length=200)
+    message = models.TextField('提醒内容')
+    related_lens = models.ForeignKey(Lens, on_delete=models.SET_NULL, null=True, blank=True, related_name='+', verbose_name='关联镜片')
+    is_dismissed = models.BooleanField('是否已忽略', default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'travel_risk_alert'
+        ordering = ['-severity', '-created_at']
+        verbose_name = '旅行风险提醒'
+        verbose_name_plural = verbose_name
+
+    def __str__(self):
+        return f'[{self.get_severity_display()}] {self.title}'

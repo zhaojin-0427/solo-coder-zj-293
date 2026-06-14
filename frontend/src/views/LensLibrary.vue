@@ -90,6 +90,9 @@
               <span v-if="lens.usage_frequency" class="tag" :class="USAGE_FREQUENCY_MAP[lens.usage_frequency]?.class">
                 {{ USAGE_FREQUENCY_MAP[lens.usage_frequency]?.label }}
               </span>
+              <span v-if="lens.in_upcoming_travel" class="tag tag-indigo">
+                ✈️ 已加入{{ lens.upcoming_travel_plans?.length || 0 }}次近期旅行
+              </span>
             </div>
           </div>
         </div>
@@ -180,6 +183,7 @@
                     class="btn btn-sm btn-primary" @click="openCareActions(lens)">护理</button>
             <button v-if="lens.is_under_rest" class="btn btn-sm btn-warning" @click="handleEndRest(lens.id)">结束停戴</button>
             <button class="btn btn-sm btn-pink" @click="createOutfitPlan(lens.id)">💄 搭配</button>
+            <button class="btn btn-sm" style="background: linear-gradient(135deg, #6366F1, #8B5CF6); color: white;" @click="createTravelPlan(lens.id)">✈️ 旅行</button>
             <button class="btn btn-sm btn-secondary" @click="openEdit(lens)">编辑</button>
             <button class="btn btn-sm btn-danger" @click="handleDelete(lens.id)">删除</button>
           </div>
@@ -550,6 +554,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
+import { TRAVEL_STATUS_MAP } from '@/utils/constants'
 import {
   getLensList, createLens, updateLens, deleteLens, openLens, markLensUsedUp,
   markLensCareDone, markLensCheckupDone, startLensRest, endLensRest,
@@ -826,6 +831,13 @@ const openCareDetail = async () => {
 const createOutfitPlan = (lensId) => {
   router.push({
     path: '/outfit-plans',
+    query: { lens_id: lensId }
+  })
+}
+
+const createTravelPlan = (lensId) => {
+  router.push({
+    path: '/travel',
     query: { lens_id: lensId }
   })
 }

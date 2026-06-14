@@ -54,6 +54,21 @@
         <div class="stat-value" style="color: #B45309;">{{ outfitStats.avg_match_score || 0 }}</div>
         <div class="stat-sub">待执行: {{ outfitStats.pending_plans || 0 }} 个</div>
       </div>
+      <div class="stat-card" style="background: linear-gradient(135deg, #E0E7FF, #C7D2FE);">
+        <div class="stat-label">✈️ 旅行方案总数</div>
+        <div class="stat-value" style="color: #4338CA;">{{ travelStats.total_plans || 0 }}</div>
+        <div class="stat-sub">总出行: {{ travelStats.total_travel_days || 0 }} 天</div>
+      </div>
+      <div class="stat-card" style="background: linear-gradient(135deg, #D1FAE5, #A7F3D0);">
+        <div class="stat-label">✅ 已完成行程</div>
+        <div class="stat-value" style="color: #047857;">{{ travelStats.status_counts?.completed || 0 }}</div>
+        <div class="stat-sub">进行中: {{ travelStats.status_counts?.in_progress || 0 }} 次</div>
+      </div>
+      <div class="stat-card" style="background: linear-gradient(135deg, #FEE2E2, #FECACA);">
+        <div class="stat-label">🚨 风险提醒总数</div>
+        <div class="stat-value" style="color: #B91C1C;">{{ travelStats.total_alerts || 0 }}</div>
+        <div class="stat-sub">高风险行程: {{ travelStats.risk_counts?.high || 0 }} 次</div>
+      </div>
     </div>
 
     <div v-if="budgetStats.is_over_budget" class="alert alert-danger mb-20">
@@ -431,6 +446,129 @@
       </div>
     </div>
 
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+      <div class="card">
+        <div class="card-title">👁️ 出行场景镜片使用次数排行</div>
+        <div v-if="travelStats.lens_usage_ranking?.length" class="chart-container small" ref="travelLensChartRef"></div>
+        <div v-else class="empty-state" style="padding: 40px;">
+          <div class="empty-icon">👁️</div>
+          <p>暂无出行镜片数据</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">⭐ 旅行舒适度排行</div>
+        <div v-if="travelStats.comfort_ranking?.length" class="chart-container small" ref="travelComfortChartRef"></div>
+        <div v-else class="empty-state" style="padding: 40px;">
+          <div class="empty-icon">⭐</div>
+          <p>暂无舒适度数据</p>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+      <div class="card">
+        <div class="card-title">🚨 旅行风险提醒统计</div>
+        <div v-if="travelStats.alert_type_stats && Object.keys(travelStats.alert_type_stats).length" class="chart-container small" ref="travelAlertChartRef"></div>
+        <div v-else class="empty-state" style="padding: 40px;">
+          <div class="empty-icon">🚨</div>
+          <p>暂无风险提醒数据</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">🧴 常用携带用品统计</div>
+        <div v-if="travelStats.common_supplies?.length" class="chart-container small" ref="travelSupplyChartRef"></div>
+        <div v-else class="empty-state" style="padding: 40px;">
+          <div class="empty-icon">🧴</div>
+          <p>暂无用品统计数据</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mb-20">
+      <div class="flex-between mb-16">
+        <div class="card-title" style="margin-bottom: 0;">✈️ 出行镜片使用详情</div>
+        <div class="text-sm text-light">基于旅行方案中携带镜片统计</div>
+      </div>
+      <table class="table" v-if="travelStats.lens_usage_ranking?.length">
+        <thead>
+          <tr>
+            <th>排名</th>
+            <th>品牌</th>
+            <th>型号</th>
+            <th>出行次数</th>
+            <th>总携带数量</th>
+            <th>平均舒适度</th>
+            <th>平均佩戴时长</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="(l, idx) in travelStats.lens_usage_ranking.slice(0, 10)" :key="l.lens_id">
+            <td>
+              <span v-if="idx === 0">🥇</span>
+              <span v-else-if="idx === 1">🥈</span>
+              <span v-else-if="idx === 2">🥉</span>
+              <span v-else class="text-light">{{ idx + 1 }}</span>
+            </td>
+            <td class="text-bold">{{ l.brand || '-' }}</td>
+            <td class="text-sm text-light">{{ l.model || '-' }}</td>
+            <td>{{ l.travel_count || l.count || 0 }} 次</td>
+            <td>{{ l.total_quantity || 0 }} 片</td>
+            <td>
+              <span :class="getComfortClass(Math.round(l.avg_comfort))">
+                {{ l.avg_comfort ? '⭐'.repeat(Math.round(l.avg_comfort)) : '-' }}
+              </span>
+              <span class="text-sm ml-8">{{ l.avg_comfort || '-' }}</span>
+            </td>
+            <td>{{ l.avg_duration_hours || 0 }}h</td>
+          </tr>
+        </tbody>
+      </table>
+      <div v-else class="empty-state" style="padding: 30px;">
+        <p class="text-light">暂无出行镜片数据</p>
+      </div>
+    </div>
+
+    <div class="card mb-20">
+      <div class="card-title">🌤️ 出行气候与目的地分布</div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+        <div>
+          <div class="text-sm text-bold mb-8">气候分布</div>
+          <div v-if="travelStats.climate_stats && Object.keys(travelStats.climate_stats).length"
+               style="display: flex; flex-direction: column; gap: 6px;">
+            <div v-for="(count, climate) in travelStats.climate_stats" :key="climate" class="flex-between"
+                 style="padding: 8px 12px; background: #F9FAFB; border-radius: 6px;">
+              <span>
+                <span class="mr-8">{{ TRAVEL_STATUS_MAP ? '' : '' }}</span>
+                {{ climate }}
+              </span>
+              <span class="tag tag-indigo">{{ count }} 次</span>
+            </div>
+          </div>
+          <div v-else class="text-sm text-light">暂无气候统计</div>
+        </div>
+        <div>
+          <div class="text-sm text-bold mb-8">热门目的地 Top 5</div>
+          <div v-if="travelStats.destination_stats?.length"
+               style="display: flex; flex-direction: column; gap: 6px;">
+            <div v-for="(d, idx) in travelStats.destination_stats.slice(0, 5)" :key="d.destination" class="flex-between"
+                 style="padding: 8px 12px; background: #F9FAFB; border-radius: 6px;">
+              <span>
+                <span v-if="idx === 0">🥇</span>
+                <span v-else-if="idx === 1">🥈</span>
+                <span v-else-if="idx === 2">🥉</span>
+                <span v-else class="text-light mr-8">{{ idx + 1 }}.</span>
+                📍 {{ d.destination }}
+              </span>
+              <span class="tag tag-blue">{{ d.count }} 次</span>
+            </div>
+          </div>
+          <div v-else class="text-sm text-light">暂无目的地统计</div>
+        </div>
+      </div>
+    </div>
+
     <div class="card mb-20">
       <div class="card-title">🔔 长期未使用镜片提醒</div>
       <table class="table" v-if="unusedLenses.length">
@@ -502,9 +640,11 @@ import { getOutfitPlanStats } from '@/api/outfitPlan'
 import { getUnusedLenses, getLensList } from '@/api/lens'
 import { getRecordList } from '@/api/record'
 import { getBudgetStats, getBudgetMonthlySummary } from '@/api/budget'
+import { getTravelPlanStats } from '@/api/travel'
 import {
   formatDate, getComfortClass, CARE_STATUS_MAP, CARE_TYPE_OPTIONS,
-  RESTOCK_PRIORITY_MAP
+  RESTOCK_PRIORITY_MAP, TRAVEL_STATUS_MAP, TRAVEL_RISK_LEVEL_MAP,
+  TRAVEL_SUPPLY_TYPE_MAP, TRAVEL_ALERT_TYPE_MAP, TRAVEL_ALERT_SEVERITY_MAP
 } from '@/utils/constants'
 
 const overview = ref({})
@@ -520,6 +660,7 @@ const careMethodComfort = ref([])
 const outfitStats = ref({})
 const budgetStats = ref({})
 const budgetLimit = ref(500)
+const travelStats = ref({})
 
 const brandChartRef = ref(null)
 const waterChartRef = ref(null)
@@ -531,6 +672,7 @@ let brandChart = null, waterChart = null, purposeChart = null, hoursPieChart = n
 let careMethodChart = null, reminderChart = null
 let makeupStyleChart = null, sceneLensChart = null, matchScoreChart = null, tagStatsChart = null
 let budgetMonthlyTrendChart = null, brandValueChart = null
+let travelLensChart = null, travelComfortChart = null, travelAlertChart = null, travelSupplyChart = null
 
 const makeupChartRef = ref(null)
 const sceneLensChartRef = ref(null)
@@ -538,6 +680,10 @@ const matchScoreChartRef = ref(null)
 const tagStatsChartRef = ref(null)
 const budgetMonthlyTrendChartRef = ref(null)
 const brandValueChartRef = ref(null)
+const travelLensChartRef = ref(null)
+const travelComfortChartRef = ref(null)
+const travelAlertChartRef = ref(null)
+const travelSupplyChartRef = ref(null)
 
 const lensHoursList = ref([])
 
@@ -600,7 +746,7 @@ const getCareTypeLabel = (type) => {
 
 const loadData = async () => {
   try {
-    const [ov, brands, waters, purposes, unused, tps, records, lenses, care, careMethod, outfitSt, budgetSt] = await Promise.all([
+    const [ov, brands, waters, purposes, unused, tps, records, lenses, care, careMethod, outfitSt, budgetSt, travelSt] = await Promise.all([
       getStatsOverview(),
       getBrandComfort(),
       getWaterContentFit(),
@@ -612,7 +758,8 @@ const loadData = async () => {
       getCareStats(),
       getCareMethodComfort(),
       getOutfitPlanStats(),
-      getBudgetStats({ limit: budgetLimit.value }).catch(() => ({}))
+      getBudgetStats({ limit: budgetLimit.value }).catch(() => ({})),
+      getTravelPlanStats().catch(() => ({}))
     ])
     overview.value = ov
     brandStats.value = Array.isArray(brands) ? brands : []
@@ -626,6 +773,7 @@ const loadData = async () => {
     careMethodComfort.value = Array.isArray(careMethod) ? careMethod : []
     outfitStats.value = outfitSt || {}
     budgetStats.value = budgetSt || {}
+    travelStats.value = travelSt || {}
 
     const hoursMap = {}
     allRecords.value.forEach(r => {
@@ -651,6 +799,10 @@ const loadData = async () => {
     renderTagStatsChart()
     renderBudgetMonthlyTrendChart()
     renderBrandValueChart()
+    renderTravelLensChart()
+    renderTravelComfortChart()
+    renderTravelAlertChart()
+    renderTravelSupplyChart()
   } catch (e) {
     console.error(e)
   }
@@ -1025,6 +1177,116 @@ const renderBrandValueChart = () => {
   })
 }
 
+const renderTravelLensChart = () => {
+  if (!travelLensChartRef.value || !travelStats.value.lens_usage_ranking?.length) return
+  if (!travelLensChart) travelLensChart = echarts.init(travelLensChartRef.value)
+  const data = travelStats.value.lens_usage_ranking.slice(0, 8).reverse()
+  travelLensChart.setOption({
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    grid: { left: 120, right: 50, top: 20, bottom: 30 },
+    xAxis: { type: 'value', name: '使用次数' },
+    yAxis: {
+      type: 'category',
+      data: data.map(d => d.brand ? `${d.brand} ${d.model || ''}` : `镜片#${d.lens_id}`),
+      axisLabel: { fontSize: 11 }
+    },
+    series: [{
+      type: 'bar',
+      data: data.map(d => d.count || d.travel_count || 0),
+      itemStyle: {
+        color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+          { offset: 0, color: '#818CF8' },
+          { offset: 1, color: #6366F1' }
+        ]),
+        borderRadius: [0, 8, 8, 0]
+      },
+      label: { show: true, position: 'right', formatter: p => p.value + ' 次' },
+      barWidth: 16
+    }]
+  })
+}
+
+const renderTravelComfortChart = () => {
+  if (!travelComfortChartRef.value || !travelStats.value.comfort_ranking?.length) return
+  if (!travelComfortChart) travelComfortChart = echarts.init(travelComfortChartRef.value)
+  const data = travelStats.value.comfort_ranking.slice(0, 8).reverse()
+  travelComfortChart.setOption({
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    grid: { left: 120, right: 50, top: 20, bottom: 30 },
+    xAxis: { type: 'value', min: 0, max: 5, name: '舒适度' },
+    yAxis: {
+      type: 'category',
+      data: data.map(d => d.brand ? `${d.brand} ${d.model || ''}` : `镜片#${d.lens_id}`),
+      axisLabel: { fontSize: 11 }
+    },
+    series: [{
+      type: 'bar',
+      data: data.map(d => d.avg_comfort || 0),
+      itemStyle: {
+        color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+          { offset: 0, color: '#F472B6' },
+          { offset: 1, color: '#EC4899' }
+        ]),
+        borderRadius: [0, 8, 8, 0]
+      },
+      label: { show: true, position: 'right', formatter: p => p.value + ' ⭐' },
+      barWidth: 16
+    }]
+  })
+}
+
+const renderTravelAlertChart = () => {
+  const stats = travelStats.value.alert_type_stats || {}
+  if (!travelAlertChartRef.value || !Object.keys(stats).length) return
+  if (!travelAlertChart) travelAlertChart = echarts.init(travelAlertChartRef.value)
+  const data = Object.entries(stats).map(([type, count]) => ({
+    name: TRAVEL_ALERT_TYPE_MAP[type]?.label || type,
+    value: count,
+    itemStyle: { color: TRAVEL_ALERT_TYPE_MAP[type]?.color || '#6366F1' }
+  }))
+  travelAlertChart.setOption({
+    tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+    legend: { bottom: 0, type: 'scroll' },
+    series: [{
+      type: 'pie',
+      radius: ['40%', '65%'],
+      center: ['50%', '45%'],
+      avoidLabelOverlap: true,
+      label: { show: true, formatter: '{b}\n{c}个' },
+      data: data
+    }]
+  })
+}
+
+const renderTravelSupplyChart = () => {
+  const stats = travelStats.value.common_supplies || []
+  if (!travelSupplyChartRef.value || !stats.length) return
+  if (!travelSupplyChart) travelSupplyChart = echarts.init(travelSupplyChartRef.value)
+  const data = stats.slice(0, 10).reverse()
+  travelSupplyChart.setOption({
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    grid: { left: 100, right: 50, top: 20, bottom: 30 },
+    xAxis: { type: 'value', name: '携带次数' },
+    yAxis: {
+      type: 'category',
+      data: data.map(d => TRAVEL_SUPPLY_TYPE_MAP[d.supply_type]?.label || d.supply_type || d.custom_name || '其他')
+    },
+    series: [{
+      type: 'bar',
+      data: data.map(d => d.count || 0),
+      itemStyle: {
+        color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+          { offset: 0, color: '#34D399' },
+          { offset: 1, color: '#10B981' }
+        ]),
+        borderRadius: [0, 8, 8, 0]
+      },
+      label: { show: true, position: 'right', formatter: p => p.value + ' 次' },
+      barWidth: 14
+    }]
+  })
+}
+
 onMounted(async () => {
   await loadData()
   window.addEventListener('resize', () => {
@@ -1033,6 +1295,8 @@ onMounted(async () => {
     makeupStyleChart?.resize(); sceneLensChart?.resize()
     matchScoreChart?.resize(); tagStatsChart?.resize()
     budgetMonthlyTrendChart?.resize(); brandValueChart?.resize()
+    travelLensChart?.resize(); travelComfortChart?.resize()
+    travelAlertChart?.resize(); travelSupplyChart?.resize()
   })
 })
 </script>

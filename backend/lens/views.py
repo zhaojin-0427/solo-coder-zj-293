@@ -5,13 +5,18 @@ from django.db.models import Sum, Avg, Count, Q, Case, When, IntegerField, F
 from django.utils import timezone
 from datetime import timedelta
 
-from .models import Lens, WearRecord, CareRecord, CareReminder, OutfitPlan, PurchaseRecord, RestockSuggestion
+from .models import (
+    Lens, WearRecord, CareRecord, CareReminder, OutfitPlan, PurchaseRecord, RestockSuggestion,
+    TravelPlan, TravelLensItem, TravelSupplyItem, TravelDailyPlan, TravelRiskAlert
+)
 from .serializers import (
     LensSerializer, WearRecordSerializer,
     CareRecordSerializer, CareReminderSerializer,
     OutfitPlanSerializer, OutfitPlanStatsSerializer,
     PurchaseRecordSerializer, RestockSuggestionSerializer,
-    BudgetStatsSerializer
+    BudgetStatsSerializer,
+    TravelPlanSerializer, TravelLensItemSerializer, TravelSupplyItemSerializer,
+    TravelDailyPlanSerializer, TravelRiskAlertSerializer, TravelStatsSerializer
 )
 
 
@@ -1538,3 +1543,414 @@ class BudgetViewSet(viewsets.ViewSet):
                 'brand_count': m_brands
             })
         return Response(months)
+
+
+class TravelPlanViewSet(viewsets.ModelViewSet):
+    queryset = TravelPlan.objects.all()
+    serializer_class = TravelPlanSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        for plan in qs:
+            plan.update_auto_status()
+
+        status = self.request.query_params.get('status')
+        risk_level = self.request.query_params.get('risk_level')
+        destination = self.request.query_params.get('destination')
+        month = self.request.query_params.get('month')
+        date_from = self.request.query_params.get('date_from')
+        date_to = self.request.query_params.get('date_to')
+        lens_id = self.request.query_params.get('lens_id')
+
+        if status:
+            statuses = status.split(',')
+            qs = qs.filter(status__in=statuses)
+        if risk_level:
+            qs = qs.filter(risk_level=risk_level)
+        if destination:
+            qs = qs.filter(destination__icontains=destination)
+        if month:
+            qs = qs.filter(Q(start_date__startswith=month) | Q(end_date__startswith=month))
+        if date_from:
+            qs = qs.filter(start_date__gte=date_from)
+        if date_to:
+            qs = qs.filter(end_date__lte=date_to)
+        if lens_id:
+            qs = qs.filter(
+                Q(lens_items__lens_id=lens_id) | Q(daily_plans__expected_wear_lens_id=lens_id)
+            ).distinct()
+        return qs
+
+    def perform_create(self, serializer):
+        instance = serializer.save()
+        instance.calculate_risk_level()
+
+    def perform_update(self, serializer):
+        instance = serializer.save()
+        instance.calculate_risk_level()
+
+    @action(detail=False, methods=['get'])
+    def upcoming(self, request):
+        today = timezone.now().date()
+        days = int(request.query_params.get('days', 30))
+        end_date = today + timedelta(days=days)
+        plans = self.get_queryset().filter(
+            status__in=['planning', 'upcoming', 'in_progress'],
+            start_date__lte=end_date
+        ).order_by('start_date')
+        for plan in plans:
+            plan.calculate_risk_level()
+        serializer = self.get_serializer(plans, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def in_progress(self, request):
+        today = timezone.now().date()
+        plans = self.get_queryset().filter(
+            start_date__lte=today,
+            end_date__gte=today
+        ).order_by('start_date')
+        for plan in plans:
+            plan.calculate_risk_level()
+        serializer = self.get_serializer(plans, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['get'])
+    def suggestions(self, request, pk=None):
+        plan = self.get_object()
+        suggestions, risks = plan.generate_suggestions_and_risks()
+        return Response({
+            'suggestions': suggestions,
+            'risks': risks,
+            'risk_level': plan.calculate_risk_level()
+        })
+
+    @action(detail=True, methods=['post'])
+    def recalculate_risk(self, request, pk=None):
+        plan = self.get_object()
+        risk_level = plan.calculate_risk_level()
+        return Response({'risk_level': risk_level})
+
+    @action(detail=True, methods=['post'])
+    def mark_completed(self, request, pk=None):
+        plan = self.get_object()
+        plan.status = 'completed'
+        plan.save()
+        serializer = self.get_serializer(plan)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'])
+    def mark_cancelled(self, request, pk=None):
+        plan = self.get_object()
+        plan.status = 'cancelled'
+        plan.save()
+        serializer = self.get_serializer(plan)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'])
+    def generate_alerts(self, request, pk=None):
+        plan = self.get_object()
+        suggestions, risks = plan.generate_suggestions_and_risks()
+        created_alerts = []
+        for risk in risks:
+            alert_type = risk.get('type', 'other')
+            valid_types = [t[0] for t in TravelRiskAlert.ALERT_TYPE_CHOICES]
+            if alert_type not in valid_types:
+                alert_type = 'other'
+            exists = TravelRiskAlert.objects.filter(
+                travel_plan=plan,
+                title=risk.get('title', ''),
+                is_dismissed=False
+            ).exists()
+            if not exists:
+                alert = TravelRiskAlert.objects.create(
+                    travel_plan=plan,
+                    alert_type=alert_type,
+                    severity=risk.get('level', 'info'),
+                    title=risk.get('title', ''),
+                    message=risk.get('message', ''),
+                    related_lens_id=risk.get('lens_id')
+                )
+                created_alerts.append(alert)
+        serializer = TravelRiskAlertSerializer(created_alerts, many=True)
+        return Response({'count': len(created_alerts), 'alerts': serializer.data})
+
+    @action(detail=False, methods=['get'])
+    def stats(self, request):
+        today = timezone.now().date()
+        all_plans = TravelPlan.objects.all()
+
+        total_plans = all_plans.count()
+        completed_plans = all_plans.filter(status='completed').count()
+        upcoming_plans = all_plans.filter(
+            status__in=['planning', 'upcoming'],
+            start_date__gte=today
+        ).count()
+        in_progress_plans = all_plans.filter(
+            start_date__lte=today,
+            end_date__gte=today
+        ).exclude(status='cancelled').count()
+
+        high_risk_count = all_plans.filter(risk_level='high').count()
+        medium_risk_count = all_plans.filter(risk_level='medium').count()
+        low_risk_count = all_plans.filter(risk_level='low').count()
+
+        total_travel_days = sum(
+            plan.get_duration_days() for plan in all_plans.filter(status__in=['completed', 'in_progress'])
+        )
+
+        total_lens_used = TravelLensItem.objects.filter(
+            travel_plan__status__in=['completed', 'in_progress']
+        ).aggregate(Sum('quantity'))['quantity__sum'] or 0
+
+        lens_usage_qs = TravelLensItem.objects.filter(
+            travel_plan__status__in=['completed', 'in_progress']
+        ).values(
+            'lens_id', 'lens__brand', 'lens__model_name', 'lens__color'
+        ).annotate(
+            total_quantity=Sum('quantity'),
+            plan_count=Count('travel_plan', distinct=True)
+        ).order_by('-total_quantity')[:10]
+
+        lens_travel_usage_ranking = []
+        for lu in lens_usage_qs:
+            lens = Lens.objects.filter(pk=lu['lens_id']).first()
+            avg_comfort = lens.get_avg_comfort_level() if lens else None
+            lens_travel_usage_ranking.append({
+                'lens_id': lu['lens_id'],
+                'brand': lu['lens__brand'] or '未知',
+                'model': lu['lens__model_name'] or '',
+                'color': lu['lens__color'] or '',
+                'total_quantity': lu['total_quantity'],
+                'plan_count': lu['plan_count'],
+                'avg_comfort': avg_comfort
+            })
+
+        travel_comfort_ranking = []
+        travel_lens_ids = TravelLensItem.objects.values_list('lens_id', flat=True).distinct()
+        for lid in travel_lens_ids:
+            lens = Lens.objects.filter(pk=lid).first()
+            if not lens:
+                continue
+            avg_comfort = lens.get_avg_comfort_level()
+            if avg_comfort is None:
+                continue
+            travel_count = TravelLensItem.objects.filter(lens_id=lid).count()
+            travel_comfort_ranking.append({
+                'lens_id': lid,
+                'brand': lens.brand,
+                'model': lens.model_name,
+                'color': lens.color,
+                'avg_comfort': avg_comfort,
+                'travel_count': travel_count
+            })
+        travel_comfort_ranking.sort(key=lambda x: x['avg_comfort'], reverse=True)
+        travel_comfort_ranking = travel_comfort_ranking[:10]
+
+        all_alerts = TravelRiskAlert.objects.all()
+        total_risk_alerts = all_alerts.count()
+        dismissed_risk_alerts = all_alerts.filter(is_dismissed=True).count()
+        active_risk_alerts = all_alerts.filter(is_dismissed=False).count()
+        travel_risk_count = active_risk_alerts
+
+        planning_plans = all_plans.filter(status='planning').count()
+        cancelled_plans = all_plans.filter(status='cancelled').count()
+        status_upcoming = all_plans.filter(status='upcoming').count()
+        status_in_progress = all_plans.filter(status='in_progress').count()
+        status_counts = {
+            'planning': planning_plans,
+            'upcoming': status_upcoming,
+            'in_progress': status_in_progress,
+            'completed': completed_plans,
+            'cancelled': cancelled_plans,
+        }
+        risk_counts = {
+            'low': low_risk_count,
+            'medium': medium_risk_count,
+            'high': high_risk_count,
+        }
+
+        alert_type_qs = TravelRiskAlert.objects.values('alert_type').annotate(
+            count=Count('id')
+        )
+        alert_type_stats = {a['alert_type']: a['count'] for a in alert_type_qs}
+
+        lens_usage_ranking = []
+        for lu in lens_travel_usage_ranking:
+            item = dict(lu)
+            item['count'] = lu.get('plan_count', 0)
+            item['travel_count'] = lu.get('plan_count', 0)
+            item['avg_duration_hours'] = 8
+            lens_usage_ranking.append(item)
+
+        comfort_ranking = list(travel_comfort_ranking)
+
+        supply_qs = TravelSupplyItem.objects.filter(
+            travel_plan__status__in=['completed', 'in_progress']
+        ).values('supply_type', 'custom_name').annotate(
+            count=Count('id')
+        ).order_by('-count')[:10]
+
+        supply_labels = dict(TravelSupplyItem.SUPPLY_TYPE_CHOICES)
+        common_supplies = []
+        for s in supply_qs:
+            name = s['custom_name'] or supply_labels.get(s['supply_type'], s['supply_type'])
+            common_supplies.append({
+                'supply_type': s['supply_type'],
+                'name': name,
+                'count': s['count']
+            })
+
+        dest_qs = all_plans.values('destination').annotate(
+            count=Count('id')
+        ).order_by('-count')[:10]
+        destination_stats = [{'destination': d['destination'], 'count': d['count']} for d in dest_qs]
+
+        climate_qs = all_plans.values('climate').annotate(
+            count=Count('id')
+        ).order_by('-count')
+        climate_labels = dict(TravelPlan.CLIMATE_CHOICES)
+        climate_stats = [
+            {
+                'climate': c['climate'],
+                'label': climate_labels.get(c['climate'], c['climate']),
+                'count': c['count']
+            }
+            for c in climate_qs
+        ]
+
+        recent_plans = all_plans.order_by('-start_date')[:5]
+        recent_travel_plans = TravelPlanSerializer(recent_plans, many=True).data
+
+        data = {
+            'total_plans': total_plans,
+            'completed_plans': completed_plans,
+            'upcoming_plans': upcoming_plans,
+            'in_progress_plans': in_progress_plans,
+            'high_risk_count': high_risk_count,
+            'medium_risk_count': medium_risk_count,
+            'low_risk_count': low_risk_count,
+            'total_travel_days': total_travel_days,
+            'total_lens_used_in_travel': total_lens_used,
+            'lens_travel_usage_ranking': lens_travel_usage_ranking,
+            'travel_comfort_ranking': travel_comfort_ranking,
+            'travel_risk_count': travel_risk_count,
+            'common_supplies': common_supplies,
+            'destination_stats': destination_stats,
+            'climate_stats': climate_stats,
+            'recent_travel_plans': recent_travel_plans,
+            'total_risk_alerts': total_risk_alerts,
+            'dismissed_risk_alerts': dismissed_risk_alerts,
+            'active_risk_alerts': active_risk_alerts,
+            'status_counts': status_counts,
+            'risk_counts': risk_counts,
+            'lens_usage_ranking': lens_usage_ranking,
+            'comfort_ranking': comfort_ranking,
+            'total_alerts': total_risk_alerts,
+            'alert_type_stats': alert_type_stats,
+        }
+
+        serializer = TravelStatsSerializer(data)
+        return Response(serializer.data)
+
+
+class TravelLensItemViewSet(viewsets.ModelViewSet):
+    queryset = TravelLensItem.objects.all()
+    serializer_class = TravelLensItemSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        travel_plan_id = self.request.query_params.get('travel_plan_id')
+        lens_id = self.request.query_params.get('lens_id')
+        role = self.request.query_params.get('role')
+        if travel_plan_id:
+            qs = qs.filter(travel_plan_id=travel_plan_id)
+        if lens_id:
+            qs = qs.filter(lens_id=lens_id)
+        if role:
+            qs = qs.filter(role=role)
+        return qs
+
+
+class TravelSupplyItemViewSet(viewsets.ModelViewSet):
+    queryset = TravelSupplyItem.objects.all()
+    serializer_class = TravelSupplyItemSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        travel_plan_id = self.request.query_params.get('travel_plan_id')
+        supply_type = self.request.query_params.get('supply_type')
+        is_checked = self.request.query_params.get('is_checked')
+        if travel_plan_id:
+            qs = qs.filter(travel_plan_id=travel_plan_id)
+        if supply_type:
+            qs = qs.filter(supply_type=supply_type)
+        if is_checked is not None:
+            qs = qs.filter(is_checked=(is_checked == 'true'))
+        return qs
+
+    @action(detail=True, methods=['post'])
+    def toggle(self, request, pk=None):
+        item = self.get_object()
+        item.is_checked = not item.is_checked
+        item.save()
+        if item.travel_plan:
+            item.travel_plan.calculate_risk_level()
+        serializer = self.get_serializer(item)
+        return Response(serializer.data)
+
+
+class TravelDailyPlanViewSet(viewsets.ModelViewSet):
+    queryset = TravelDailyPlan.objects.all()
+    serializer_class = TravelDailyPlanSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        travel_plan_id = self.request.query_params.get('travel_plan_id')
+        lens_id = self.request.query_params.get('lens_id')
+        date = self.request.query_params.get('date')
+        if travel_plan_id:
+            qs = qs.filter(travel_plan_id=travel_plan_id)
+        if lens_id:
+            qs = qs.filter(expected_wear_lens_id=lens_id)
+        if date:
+            qs = qs.filter(plan_date=date)
+        return qs
+
+
+class TravelRiskAlertViewSet(viewsets.ModelViewSet):
+    queryset = TravelRiskAlert.objects.all()
+    serializer_class = TravelRiskAlertSerializer
+    http_method_names = ['get', 'post', 'patch', 'head', 'options']
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        travel_plan_id = self.request.query_params.get('travel_plan_id')
+        alert_type = self.request.query_params.get('alert_type')
+        severity = self.request.query_params.get('severity')
+        include_dismissed = self.request.query_params.get('include_dismissed', 'false') == 'true'
+        if travel_plan_id:
+            qs = qs.filter(travel_plan_id=travel_plan_id)
+        if alert_type:
+            qs = qs.filter(alert_type=alert_type)
+        if severity:
+            qs = qs.filter(severity=severity)
+        if not include_dismissed:
+            qs = qs.filter(is_dismissed=False)
+        return qs
+
+    @action(detail=True, methods=['post'])
+    def dismiss(self, request, pk=None):
+        alert = self.get_object()
+        alert.is_dismissed = True
+        alert.save()
+        return Response({'status': 'dismissed'})
+
+    @action(detail=False, methods=['get'])
+    def active(self, request):
+        today = timezone.now().date()
+        alerts = self.get_queryset().filter(
+            travel_plan__end_date__gte=today - timedelta(days=7)
+        ).order_by('-severity', '-created_at')
+        serializer = self.get_serializer(alerts, many=True)
+        return Response(serializer.data)

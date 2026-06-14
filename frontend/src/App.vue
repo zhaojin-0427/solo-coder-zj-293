@@ -38,6 +38,10 @@
           <span class="nav-icon">💰</span>
           <span>预算与补货</span>
         </router-link>
+        <router-link to="/travel" class="nav-item" active-class="active">
+          <span class="nav-icon">✈️</span>
+          <span>旅行清单</span>
+        </router-link>
       </nav>
     </aside>
     <main class="main-content">

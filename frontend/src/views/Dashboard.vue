@@ -63,6 +63,14 @@
         <div class="stat-label">⭐ 平均搭配分</div>
         <div class="stat-value" style="color: #B45309;">{{ outfitStats.avg_match_score || 0 }}</div>
       </div>
+      <div class="stat-card" style="background: linear-gradient(135deg, #E0E7FF, #C7D2FE);">
+        <div class="stat-label">✈️ 近期出行</div>
+        <div class="stat-value" style="color: #4338CA;">{{ upcomingTravelPlans.length || 0 }} 次</div>
+      </div>
+      <div class="stat-card" style="background: linear-gradient(135deg, #FEE2E2, #FECACA);">
+        <div class="stat-label">🚨 高风险出行</div>
+        <div class="stat-value" style="color: #B91C1C;">{{ upcomingTravelPlans.filter(p => p.risk_level === 'high').length || 0 }} 次</div>
+      </div>
     </div>
 
     <div v-if="overduePlans.length" class="card mb-20" style="border-left: 4px solid #EF4444;">
@@ -122,6 +130,43 @@
         <div v-if="restockSuggestions.length > 3" class="text-sm text-light text-center mt-8">
           还有 {{ restockSuggestions.length - 3 }} 条补货提醒...
         </div>
+      </div>
+    </div>
+
+    <div v-if="upcomingTravelPlans.length" class="card mb-20" style="border-left: 4px solid #6366F1;">
+      <div class="flex-between mb-16">
+        <div class="card-title" style="margin-bottom: 0; color: #4338CA;">
+          ✈️ 近期出行携带提醒（{{ upcomingTravelPlans.length }}）
+        </div>
+        <router-link to="/travel" class="btn btn-link text-sm">查看全部 →</router-link>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div v-for="plan in upcomingTravelPlans.slice(0, 4)" :key="plan.id"
+             class="flex-between"
+             style="padding: 10px 12px; background: #EEF2FF; border-radius: 6px;">
+          <div>
+            <span class="text-bold">✈️ {{ plan.name }}</span>
+            <span class="text-sm text-light ml-8">→ {{ plan.destination }}</span>
+            <span class="text-sm text-light ml-8">{{ formatDate(plan.start_date) }} ~ {{ formatDate(plan.end_date) }}</span>
+            <span class="text-sm text-light ml-8">共{{ plan.duration_days }}天</span>
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+            <span class="tag" :class="TRAVEL_STATUS_MAP[plan.status]?.class">
+              {{ TRAVEL_STATUS_MAP[plan.status]?.icon }} {{ TRAVEL_STATUS_MAP[plan.status]?.label }}
+            </span>
+            <span class="tag" :class="TRAVEL_RISK_LEVEL_MAP[plan.risk_level]?.class">
+              {{ TRAVEL_RISK_LEVEL_MAP[plan.risk_level]?.icon }} {{ TRAVEL_RISK_LEVEL_MAP[plan.risk_level]?.label }}
+            </span>
+            <span class="tag tag-blue">镜片{{ plan.total_lens_quantity || 0 }}片</span>
+            <span class="tag" :class="(plan.supplies_checked_count === plan.supplies_total_count && plan.supplies_total_count > 0) ? 'tag-green' : 'tag-yellow'">
+              用品{{ plan.supplies_checked_count || 0 }}/{{ plan.supplies_total_count || 0 }}
+            </span>
+            <router-link :to="'/travel?plan_id=' + plan.id" class="btn btn-sm btn-primary">查看</router-link>
+          </div>
+        </div>
+      </div>
+      <div v-if="upcomingTravelPlans.length > 4" class="text-sm text-light text-center mt-8">
+        还有 {{ upcomingTravelPlans.length - 4 }} 次出行计划...
       </div>
     </div>
 
@@ -270,7 +315,8 @@ import { getExpiringLenses } from '@/api/lens'
 import { getTodayWarning, getRecordList } from '@/api/record'
 import { getUpcomingPlans, getOverduePlans, getOutfitPlanStats } from '@/api/outfitPlan'
 import { getActiveRestockSuggestions, markRestockActionTaken, dismissRestockSuggestion } from '@/api/budget'
-import { formatDate, renderStars, OUTFIT_STATUS_MAP, SCENE_ICON_MAP, RESTOCK_SUGGESTION_TYPE_MAP, RESTOCK_SEVERITY_MAP } from '@/utils/constants'
+import { getUpcomingTravelPlans } from '@/api/travel'
+import { formatDate, renderStars, OUTFIT_STATUS_MAP, SCENE_ICON_MAP, RESTOCK_SUGGESTION_TYPE_MAP, RESTOCK_SEVERITY_MAP, TRAVEL_STATUS_MAP, TRAVEL_RISK_LEVEL_MAP } from '@/utils/constants'
 
 const overview = ref({})
 const todayWarning = ref(null)
@@ -281,6 +327,7 @@ const upcomingPlans = ref([])
 const overduePlans = ref([])
 const outfitStats = ref({})
 const restockSuggestions = ref([])
+const upcomingTravelPlans = ref([])
 const comfortChartRef = ref(null)
 let chartInstance = null
 
@@ -320,7 +367,7 @@ const progressClass = computed(() => {
 
 const loadData = async () => {
   try {
-    const [ov, warn, tp, exp, rec, trend, upcoming, overdue, outfitSt, restock] = await Promise.all([
+    const [ov, warn, tp, exp, rec, trend, upcoming, overdue, outfitSt, restock, upcomingTravel] = await Promise.all([
       getStatsOverview(),
       getTodayWarning().catch(() => null),
       getEyeTips(),
@@ -330,7 +377,8 @@ const loadData = async () => {
       getUpcomingPlans(7),
       getOverduePlans(),
       getOutfitPlanStats(),
-      getActiveRestockSuggestions().catch(() => [])
+      getActiveRestockSuggestions().catch(() => []),
+      getUpcomingTravelPlans().catch(() => [])
     ])
     overview.value = ov
     todayWarning.value = warn
@@ -341,6 +389,7 @@ const loadData = async () => {
     overduePlans.value = Array.isArray(overdue) ? overdue : (overdue.results || [])
     outfitStats.value = outfitSt || {}
     restockSuggestions.value = Array.isArray(restock) ? restock : (restock.results || [])
+    upcomingTravelPlans.value = Array.isArray(upcomingTravel) ? upcomingTravel : (upcomingTravel.results || [])
     renderComfortChart(trend || [])
   } catch (e) {
     console.error(e)

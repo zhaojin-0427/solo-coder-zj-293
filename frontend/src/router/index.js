@@ -48,6 +48,12 @@ const routes = [
     name: 'BudgetRestock',
     component: () => import('@/views/BudgetRestock.vue'),
     meta: { title: '预算与补货管理' }
+  },
+  {
+    path: '/travel',
+    name: 'TravelPlans',
+    component: () => import('@/views/TravelPlans.vue'),
+    meta: { title: '彩瞳旅行清单' }
   }
 ]
 

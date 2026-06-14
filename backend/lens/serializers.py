@@ -1,6 +1,9 @@
 from rest_framework import serializers
 from django.db.models import Sum, Avg, Count
-from .models import Lens, WearRecord, CareRecord, CareReminder, OutfitPlan, PurchaseRecord, RestockSuggestion
+from .models import (
+    Lens, WearRecord, CareRecord, CareReminder, OutfitPlan, PurchaseRecord, RestockSuggestion,
+    TravelPlan, TravelLensItem, TravelSupplyItem, TravelDailyPlan, TravelRiskAlert
+)
 
 
 class LensSerializer(serializers.ModelSerializer):
@@ -36,6 +39,8 @@ class LensSerializer(serializers.ModelSerializer):
     restock_priority_display = serializers.CharField(source='get_restock_priority_display', read_only=True)
     purchase_records_count = serializers.SerializerMethodField()
     active_restock_suggestions = serializers.SerializerMethodField()
+    in_upcoming_travel = serializers.SerializerMethodField()
+    upcoming_travel_plans = serializers.SerializerMethodField()
 
     class Meta:
         model = Lens
@@ -124,6 +129,42 @@ class LensSerializer(serializers.ModelSerializer):
     def get_active_restock_suggestions(self, obj):
         suggestions = obj.restock_suggestions.filter(is_dismissed=False, is_action_taken=False)[:3]
         return RestockSuggestionSerializer(suggestions, many=True).data
+
+    def get_in_upcoming_travel(self, obj):
+        from django.utils import timezone
+        from datetime import timedelta
+        today = timezone.now().date()
+        end_date = today + timedelta(days=90)
+        return obj.travel_items.filter(
+            travel_plan__start_date__gte=today,
+            travel_plan__start_date__lte=end_date,
+            travel_plan__status__in=['planning', 'upcoming']
+        ).exists()
+
+    def get_upcoming_travel_plans(self, obj):
+        from django.utils import timezone
+        from datetime import timedelta
+        today = timezone.now().date()
+        end_date = today + timedelta(days=90)
+        travel_items = obj.travel_items.filter(
+            travel_plan__start_date__gte=today,
+            travel_plan__start_date__lte=end_date,
+            travel_plan__status__in=['planning', 'upcoming']
+        ).select_related('travel_plan')[:5]
+        plans = []
+        for item in travel_items:
+            tp = item.travel_plan
+            plans.append({
+                'id': tp.id,
+                'name': tp.name,
+                'destination': tp.destination,
+                'start_date': tp.start_date.isoformat() if tp.start_date else None,
+                'end_date': tp.end_date.isoformat() if tp.end_date else None,
+                'role': item.get_role_display(),
+                'quantity': item.quantity,
+                'risk_level': tp.risk_level,
+            })
+        return plans
 
 
 class PurchaseRecordSerializer(serializers.ModelSerializer):
@@ -287,3 +328,207 @@ class OutfitPlanStatsSerializer(serializers.Serializer):
     match_score_ranking = serializers.ListField()
     upcoming_plans = serializers.ListField()
     tag_stats = serializers.DictField()
+
+
+class TravelLensItemSerializer(serializers.ModelSerializer):
+    role_display = serializers.CharField(source='get_role_display', read_only=True)
+    lens_brand = serializers.CharField(source='lens.brand', read_only=True, default='')
+    lens_model = serializers.CharField(source='lens.model_name', read_only=True, default='')
+    lens_color = serializers.CharField(source='lens.color', read_only=True, default='')
+    lens_status = serializers.CharField(source='lens.status', read_only=True, default='')
+    lens_expiry_date = serializers.DateField(source='lens.expiry_date', read_only=True, default=None)
+    lens_days_until_expiry = serializers.SerializerMethodField()
+    lens_remaining_stock = serializers.SerializerMethodField()
+    lens_avg_comfort = serializers.SerializerMethodField()
+    lens_care_method = serializers.CharField(source='lens.care_method', read_only=True, default='')
+    lens_open_date = serializers.DateField(source='lens.open_date', read_only=True, default=None)
+    lens_is_under_rest = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TravelLensItem
+        fields = '__all__'
+        extra_kwargs = {
+            'travel_plan': {'read_only': True}
+        }
+
+    def get_lens_days_until_expiry(self, obj):
+        return obj.lens.days_until_expiry() if obj.lens else None
+
+    def get_lens_remaining_stock(self, obj):
+        return obj.lens.get_remaining_stock() if obj.lens else 0
+
+    def get_lens_avg_comfort(self, obj):
+        return obj.lens.get_avg_comfort_level() if obj.lens else None
+
+    def get_lens_is_under_rest(self, obj):
+        return obj.lens.is_under_rest() if obj.lens else False
+
+
+class TravelSupplyItemSerializer(serializers.ModelSerializer):
+    supply_type_display = serializers.CharField(source='get_supply_display_name', read_only=True)
+
+    class Meta:
+        model = TravelSupplyItem
+        fields = '__all__'
+        extra_kwargs = {
+            'travel_plan': {'read_only': True}
+        }
+
+
+class TravelDailyPlanSerializer(serializers.ModelSerializer):
+    lens_brand = serializers.CharField(source='expected_wear_lens.brand', read_only=True, default='')
+    lens_model = serializers.CharField(source='expected_wear_lens.model_name', read_only=True, default='')
+    lens_color = serializers.CharField(source='expected_wear_lens.color', read_only=True, default='')
+
+    class Meta:
+        model = TravelDailyPlan
+        fields = '__all__'
+        extra_kwargs = {
+            'travel_plan': {'read_only': True}
+        }
+
+
+class TravelRiskAlertSerializer(serializers.ModelSerializer):
+    alert_type_display = serializers.CharField(source='get_alert_type_display', read_only=True)
+    severity_display = serializers.CharField(source='get_severity_display', read_only=True)
+    related_lens_brand = serializers.CharField(source='related_lens.brand', read_only=True, default='')
+    related_lens_model = serializers.CharField(source='related_lens.model_name', read_only=True, default='')
+
+    class Meta:
+        model = TravelRiskAlert
+        fields = '__all__'
+        extra_kwargs = {
+            'travel_plan': {'read_only': True}
+        }
+
+
+class TravelPlanSerializer(serializers.ModelSerializer):
+    climate_display = serializers.CharField(source='get_climate_display', read_only=True)
+    transport_display = serializers.CharField(source='get_transport_display', read_only=True)
+    luggage_display = serializers.CharField(source='get_luggage_display', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    risk_level_display = serializers.CharField(source='get_risk_level_display', read_only=True)
+    planned_wear_scene_display = serializers.CharField(source='get_wear_scene_display_name', read_only=True)
+
+    duration_days = serializers.SerializerMethodField()
+    status_info = serializers.SerializerMethodField()
+    total_lens_quantity = serializers.SerializerMethodField()
+    primary_lens_count = serializers.SerializerMethodField()
+    backup_lens_count = serializers.SerializerMethodField()
+    supplies_checked_count = serializers.SerializerMethodField()
+    supplies_total_count = serializers.SerializerMethodField()
+    suggestions_and_risks = serializers.SerializerMethodField()
+    active_risk_alerts = serializers.SerializerMethodField()
+
+    lens_items = TravelLensItemSerializer(many=True, required=False)
+    supplies = TravelSupplyItemSerializer(many=True, required=False)
+    daily_plans = TravelDailyPlanSerializer(many=True, required=False)
+
+    class Meta:
+        model = TravelPlan
+        fields = '__all__'
+
+    def get_duration_days(self, obj):
+        return obj.get_duration_days()
+
+    def get_status_info(self, obj):
+        return obj.get_status_info()
+
+    def get_total_lens_quantity(self, obj):
+        return sum(item.quantity for item in obj.lens_items.all())
+
+    def get_primary_lens_count(self, obj):
+        return obj.lens_items.filter(role='primary').count()
+
+    def get_backup_lens_count(self, obj):
+        return obj.lens_items.filter(role='backup').count()
+
+    def get_supplies_checked_count(self, obj):
+        return obj.supplies.filter(is_checked=True).count()
+
+    def get_supplies_total_count(self, obj):
+        return obj.supplies.count()
+
+    def get_suggestions_and_risks(self, obj):
+        suggestions, risks = obj.generate_suggestions_and_risks()
+        return {'suggestions': suggestions, 'risks': risks}
+
+    def get_active_risk_alerts(self, obj):
+        alerts = obj.risk_alerts.filter(is_dismissed=False)
+        return TravelRiskAlertSerializer(alerts, many=True).data
+
+    def create(self, validated_data):
+        lens_items_data = validated_data.pop('lens_items', [])
+        supplies_data = validated_data.pop('supplies', [])
+        daily_plans_data = validated_data.pop('daily_plans', [])
+
+        travel_plan = TravelPlan.objects.create(**validated_data)
+        travel_plan.update_auto_status()
+
+        for item_data in lens_items_data:
+            TravelLensItem.objects.create(travel_plan=travel_plan, **item_data)
+
+        for supply_data in supplies_data:
+            TravelSupplyItem.objects.create(travel_plan=travel_plan, **supply_data)
+
+        for daily_data in daily_plans_data:
+            TravelDailyPlan.objects.create(travel_plan=travel_plan, **daily_data)
+
+        travel_plan.calculate_risk_level()
+        return travel_plan
+
+    def update(self, instance, validated_data):
+        lens_items_data = validated_data.pop('lens_items', None)
+        supplies_data = validated_data.pop('supplies', None)
+        daily_plans_data = validated_data.pop('daily_plans', None)
+
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        instance.update_auto_status()
+
+        if lens_items_data is not None:
+            instance.lens_items.all().delete()
+            for item_data in lens_items_data:
+                TravelLensItem.objects.create(travel_plan=instance, **item_data)
+
+        if supplies_data is not None:
+            instance.supplies.all().delete()
+            for supply_data in supplies_data:
+                TravelSupplyItem.objects.create(travel_plan=instance, **supply_data)
+
+        if daily_plans_data is not None:
+            instance.daily_plans.all().delete()
+            for daily_data in daily_plans_data:
+                TravelDailyPlan.objects.create(travel_plan=instance, **daily_data)
+
+        instance.calculate_risk_level()
+        return instance
+
+
+class TravelStatsSerializer(serializers.Serializer):
+    total_plans = serializers.IntegerField()
+    completed_plans = serializers.IntegerField()
+    upcoming_plans = serializers.IntegerField()
+    in_progress_plans = serializers.IntegerField()
+    high_risk_count = serializers.IntegerField()
+    medium_risk_count = serializers.IntegerField()
+    low_risk_count = serializers.IntegerField()
+    total_travel_days = serializers.IntegerField()
+    total_lens_used_in_travel = serializers.IntegerField()
+    lens_travel_usage_ranking = serializers.ListField()
+    travel_comfort_ranking = serializers.ListField()
+    travel_risk_count = serializers.IntegerField()
+    common_supplies = serializers.ListField()
+    destination_stats = serializers.ListField()
+    climate_stats = serializers.ListField()
+    recent_travel_plans = serializers.ListField()
+    total_risk_alerts = serializers.IntegerField()
+    dismissed_risk_alerts = serializers.IntegerField()
+    active_risk_alerts = serializers.IntegerField()
+    status_counts = serializers.DictField()
+    risk_counts = serializers.DictField()
+    lens_usage_ranking = serializers.ListField()
+    comfort_ranking = serializers.ListField()
+    total_alerts = serializers.IntegerField()
+    alert_type_stats = serializers.DictField()

@@ -347,3 +347,179 @@ export const RESTOCK_SEVERITY_OPTIONS = [
   { value: 'important', label: '重要' },
   { value: 'normal', label: '常规' }
 ]
+
+export const TRAVEL_CLIMATE_OPTIONS = [
+  { value: 'tropical_humid', label: '热带潮湿', icon: '🌴' },
+  { value: 'subtropical_humid', label: '亚热带潮湿', icon: '🌿' },
+  { value: 'temperate', label: '温带温和', icon: '🌤️' },
+  { value: 'dry_hot', label: '干燥炎热', icon: '🏜️' },
+  { value: 'cold_dry', label: '寒冷干燥', icon: '❄️' },
+  { value: 'highland', label: '高原高海拔', icon: '🏔️' },
+  { value: 'marine', label: '海洋性气候', icon: '🌊' },
+  { value: 'variable', label: '气候多变', icon: '🌦️' }
+]
+
+export const TRAVEL_CLIMATE_MAP = {
+  tropical_humid: { label: '热带潮湿', icon: '🌴', class: 'tag-green' },
+  subtropical_humid: { label: '亚热带潮湿', icon: '🌿', class: 'tag-green' },
+  temperate: { label: '温带温和', icon: '🌤️', class: 'tag-blue' },
+  dry_hot: { label: '干燥炎热', icon: '🏜️', class: 'tag-yellow' },
+  cold_dry: { label: '寒冷干燥', icon: '❄️', class: 'tag-primary' },
+  highland: { label: '高原高海拔', icon: '🏔️', class: 'tag-purple' },
+  marine: { label: '海洋性气候', icon: '🌊', class: 'tag-blue' },
+  variable: { label: '气候多变', icon: '🌦️', class: 'tag-gray' }
+}
+
+export const TRAVEL_TRANSPORT_OPTIONS = [
+  { value: 'airplane', label: '飞机', icon: '✈️' },
+  { value: 'train', label: '火车/高铁', icon: '🚄' },
+  { value: 'car', label: '自驾', icon: '🚗' },
+  { value: 'bus', label: '长途大巴', icon: '🚌' },
+  { value: 'ship', label: '轮船/邮轮', icon: '🚢' },
+  { value: 'mixed', label: '多种交通', icon: '🔄' }
+]
+
+export const TRAVEL_TRANSPORT_MAP = {
+  airplane: { label: '飞机', icon: '✈️', class: 'tag-blue' },
+  train: { label: '火车/高铁', icon: '🚄', class: 'tag-green' },
+  car: { label: '自驾', icon: '🚗', class: 'tag-yellow' },
+  bus: { label: '长途大巴', icon: '🚌', class: 'tag-orange' },
+  ship: { label: '轮船/邮轮', icon: '🚢', class: 'tag-blue' },
+  mixed: { label: '多种交通', icon: '🔄', class: 'tag-gray' }
+}
+
+export const TRAVEL_LUGGAGE_OPTIONS = [
+  { value: 'carry_on', label: '仅随身行李', icon: '🎒' },
+  { value: 'checked_small', label: '托运行李(小件)', icon: '🧳' },
+  { value: 'checked_large', label: '托运行李(大件)', icon: '📦' },
+  { value: 'no_limit', label: '无限制', icon: '✅' }
+]
+
+export const TRAVEL_LUGGAGE_MAP = {
+  carry_on: { label: '仅随身行李', icon: '🎒', class: 'tag-yellow' },
+  checked_small: { label: '托运行李(小件)', icon: '🧳', class: 'tag-blue' },
+  checked_large: { label: '托运行李(大件)', icon: '📦', class: 'tag-primary' },
+  no_limit: { label: '无限制', icon: '✅', class: 'tag-green' }
+}
+
+export const TRAVEL_STATUS_MAP = {
+  planning: { label: '计划中', class: 'tag-blue', icon: '📋' },
+  upcoming: { label: '即将出发', class: 'tag-yellow', icon: '⏰' },
+  in_progress: { label: '旅行中', class: 'tag-pink', icon: '✈️' },
+  completed: { label: '已完成', class: 'tag-green', icon: '✅' },
+  cancelled: { label: '已取消', class: 'tag-gray', icon: '❌' }
+}
+
+export const TRAVEL_STATUS_OPTIONS = [
+  { value: '', label: '全部状态' },
+  { value: 'planning', label: '计划中' },
+  { value: 'upcoming', label: '即将出发' },
+  { value: 'in_progress', label: '旅行中' },
+  { value: 'completed', label: '已完成' },
+  { value: 'cancelled', label: '已取消' }
+]
+
+export const TRAVEL_RISK_LEVEL_MAP = {
+  low: { label: '低风险', class: 'tag-green', icon: '✅' },
+  medium: { label: '中等风险', class: 'tag-yellow', icon: '⚠️' },
+  high: { label: '高风险', class: 'tag-red', icon: '🚨' }
+}
+
+export const TRAVEL_RISK_LEVEL_OPTIONS = [
+  { value: '', label: '全部风险等级' },
+  { value: 'low', label: '低风险' },
+  { value: 'medium', label: '中等风险' },
+  { value: 'high', label: '高风险' }
+]
+
+export const TRAVEL_WEAR_SCENE_OPTIONS = [
+  { value: 'daily_sightseeing', label: '日常观光', icon: '🗺️' },
+  { value: 'outdoor_activity', label: '户外活动', icon: '🏕️' },
+  { value: 'beach_water', label: '海滩/水上活动', icon: '🏖️' },
+  { value: 'formal_event', label: '正式场合/宴会', icon: '🎩' },
+  { value: 'photo_shoot', label: '拍照/写真', icon: '📸' },
+  { value: 'business_meeting', label: '商务会议', icon: '💼' },
+  { value: 'night_out', label: '夜生活/派对', icon: '🎉' },
+  { value: 'sports', label: '运动', icon: '⚽' },
+  { value: 'mixed', label: '混合场景', icon: '🔄' }
+]
+
+export const TRAVEL_WEAR_SCENE_MAP = {
+  daily_sightseeing: { label: '日常观光', icon: '🗺️', class: 'tag-blue' },
+  outdoor_activity: { label: '户外活动', icon: '🏕️', class: 'tag-green' },
+  beach_water: { label: '海滩/水上活动', icon: '🏖️', class: 'tag-cyan' },
+  formal_event: { label: '正式场合/宴会', icon: '🎩', class: 'tag-purple' },
+  photo_shoot: { label: '拍照/写真', icon: '📸', class: 'tag-pink' },
+  business_meeting: { label: '商务会议', icon: '💼', class: 'tag-gray' },
+  night_out: { label: '夜生活/派对', icon: '🎉', class: 'tag-yellow' },
+  sports: { label: '运动', icon: '⚽', class: 'tag-orange' },
+  mixed: { label: '混合场景', icon: '🔄', class: 'tag-primary' }
+}
+
+export const TRAVEL_LENS_ROLE_OPTIONS = [
+  { value: 'primary', label: '主带镜片', icon: '👁️' },
+  { value: 'backup', label: '备用镜片', icon: '🔄' },
+  { value: 'special', label: '特殊场景用', icon: '✨' }
+]
+
+export const TRAVEL_LENS_ROLE_MAP = {
+  primary: { label: '主带镜片', icon: '👁️', class: 'tag-primary' },
+  backup: { label: '备用镜片', icon: '🔄', class: 'tag-yellow' },
+  special: { label: '特殊场景用', icon: '✨', class: 'tag-pink' }
+}
+
+export const TRAVEL_SUPPLY_TYPE_OPTIONS = [
+  { value: 'care_solution', label: '护理液', icon: '🧴' },
+  { value: 'lens_case', label: '镜盒', icon: '📦' },
+  { value: 'eye_drops', label: '润眼液/人工泪液', icon: '💧' },
+  { value: 'hand_sanitizer', label: '洗手液', icon: '🧼' },
+  { value: 'tweezers', label: '镊子', icon: '🔧' },
+  { value: 'glasses', label: '框架眼镜', icon: '👓' },
+  { value: 'saline', label: '生理盐水', icon: '🧪' },
+  { value: 'wet_wipes', label: '湿纸巾', icon: '🧻' },
+  { value: 'sunglasses', label: '太阳镜', icon: '🕶️' },
+  { value: 'prescription_sunglasses', label: '有度数太阳镜', icon: '😎' },
+  { value: 'other', label: '其他用品', icon: '📌' }
+]
+
+export const TRAVEL_SUPPLY_TYPE_MAP = {
+  care_solution: { label: '护理液', icon: '🧴', class: 'tag-blue' },
+  lens_case: { label: '镜盒', icon: '📦', class: 'tag-green' },
+  eye_drops: { label: '润眼液/人工泪液', icon: '💧', class: 'tag-cyan' },
+  hand_sanitizer: { label: '洗手液', icon: '🧼', class: 'tag-pink' },
+  tweezers: { label: '镊子', icon: '🔧', class: 'tag-gray' },
+  glasses: { label: '框架眼镜', icon: '👓', class: 'tag-primary' },
+  saline: { label: '生理盐水', icon: '🧪', class: 'tag-blue' },
+  wet_wipes: { label: '湿纸巾', icon: '🧻', class: 'tag-yellow' },
+  sunglasses: { label: '太阳镜', icon: '🕶️', class: 'tag-orange' },
+  prescription_sunglasses: { label: '有度数太阳镜', icon: '😎', class: 'tag-purple' },
+  other: { label: '其他用品', icon: '📌', class: 'tag-gray' }
+}
+
+export const TRAVEL_ALERT_TYPE_MAP = {
+  expiry: { label: '有效期提醒', icon: '⏰', class: 'tag-yellow' },
+  stock: { label: '库存提醒', icon: '📦', class: 'tag-orange' },
+  climate: { label: '气候提醒', icon: '🌤️', class: 'tag-blue' },
+  comfort: { label: '舒适度提醒', icon: '😊', class: 'tag-pink' },
+  supply: { label: '用品提醒', icon: '🧴', class: 'tag-green' },
+  care: { label: '护理提醒', icon: '🧼', class: 'tag-cyan' },
+  schedule: { label: '行程提醒', icon: '📅', class: 'tag-primary' },
+  other: { label: '其他提醒', icon: '📌', class: 'tag-gray' }
+}
+
+export const TRAVEL_ALERT_SEVERITY_MAP = {
+  info: { label: '提示', class: 'tag-blue', icon: 'ℹ️' },
+  warning: { label: '警告', class: 'tag-yellow', icon: '⚠️' },
+  danger: { label: '危险', class: 'tag-red', icon: '🚨' }
+}
+
+export const TRAVEL_MONTH_OPTIONS = (() => {
+  const options = [{ value: '', label: '全部月份' }]
+  const now = new Date()
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    const val = d.toISOString().slice(0, 7)
+    options.push({ value: val, label: `${d.getFullYear()}年${d.getMonth() + 1}月` })
+  }
+  return options
+})()

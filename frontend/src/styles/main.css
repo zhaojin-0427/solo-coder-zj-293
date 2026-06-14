@@ -240,6 +240,11 @@ textarea.form-control {
   color: var(--text-light);
 }
 
+.tag-indigo {
+  background: #E0E7FF;
+  color: #4338CA;
+}
+
 .table {
   width: 100%;
   border-collapse: collapse;
