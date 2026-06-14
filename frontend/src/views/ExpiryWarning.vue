@@ -97,7 +97,7 @@
             </td>
             <td class="text-sm">{{ lens.power_sph }}D · {{ lens.water_content }}% · BC{{ lens.base_curve }}</td>
             <td>
-              <router-link :to="'/lenses'" class="btn btn-link btn-sm">去处理</router-link>
+              <router-link :to="'/lens'" class="btn btn-link btn-sm">去处理</router-link>
             </td>
           </tr>
         </tbody>
@@ -151,7 +151,7 @@
               </span>
             </td>
             <td>
-              <router-link :to="'/lenses'" class="btn btn-link btn-sm">去处理</router-link>
+              <router-link :to="'/lens'" class="btn btn-link btn-sm">去处理</router-link>
             </td>
           </tr>
         </tbody>
@@ -191,7 +191,7 @@
               </span>
             </td>
             <td>
-              <router-link :to="'/lenses'" class="btn btn-link btn-sm">去处理</router-link>
+              <router-link :to="'/lens'" class="btn btn-link btn-sm">去处理</router-link>
             </td>
           </tr>
         </tbody>
@@ -200,7 +200,7 @@
 
     <div class="card mb-20" v-if="expiredLenses.length">
       <div class="card-title" style="color: var(--danger);">
-        �🚨 已过期镜片（请立即停止使用）
+        �� 已过期镜片（请立即停止使用）
       </div>
       <div class="lens-grid">
         <div v-for="lens in expiredLenses" :key="lens.id" class="lens-card expired">

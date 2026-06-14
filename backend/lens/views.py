@@ -169,15 +169,26 @@ class LensViewSet(viewsets.ModelViewSet):
             qs = qs.filter(brand__icontains=brand_filter)
         if care_status_filter:
             today = timezone.now().date()
-            if care_status_filter == 'rest':
-                qs = qs.filter(need_rest_observation=True)
+            future_3 = today + timedelta(days=3)
+            future_7 = today + timedelta(days=7)
+            if care_status_filter == 'normal':
+                rest_q = Q(need_rest_observation=True) & (Q(rest_until_date__gte=today) | Q(rest_until_date__isnull=True))
+                overdue_q = Q(next_care_date__lt=today) | Q(next_checkup_date__lt=today)
+                soon_q = (Q(next_care_date__lte=future_3) & Q(next_care_date__gte=today)) | \
+                         (Q(next_checkup_date__lte=future_7) & Q(next_checkup_date__gte=today))
+                qs = qs.exclude(rest_q | overdue_q | soon_q)
+                pks = [lens.pk for lens in qs if lens.get_care_status() == 'normal']
+                qs = qs.filter(pk__in=pks)
+            elif care_status_filter == 'rest':
+                qs = qs.filter(
+                    Q(need_rest_observation=True) &
+                    (Q(rest_until_date__gte=today) | Q(rest_until_date__isnull=True))
+                )
             elif care_status_filter == 'overdue':
                 qs = qs.filter(
                     Q(next_care_date__lt=today) | Q(next_checkup_date__lt=today)
                 )
             elif care_status_filter == 'soon':
-                future_3 = today + timedelta(days=3)
-                future_7 = today + timedelta(days=7)
                 qs = qs.filter(
                     Q(next_care_date__lte=future_3, next_care_date__gte=today) |
                     Q(next_checkup_date__lte=future_7, next_checkup_date__gte=today)
