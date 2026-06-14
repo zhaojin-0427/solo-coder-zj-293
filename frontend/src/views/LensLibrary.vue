@@ -170,6 +170,7 @@
             <button v-if="lens.status === 'opened' && !lens.is_under_rest"
                     class="btn btn-sm btn-primary" @click="openCareActions(lens)">护理</button>
             <button v-if="lens.is_under_rest" class="btn btn-sm btn-warning" @click="handleEndRest(lens.id)">结束停戴</button>
+            <button class="btn btn-sm btn-pink" @click="createOutfitPlan(lens.id)">💄 搭配</button>
             <button class="btn btn-sm btn-secondary" @click="openEdit(lens)">编辑</button>
             <button class="btn btn-sm btn-danger" @click="handleDelete(lens.id)">删除</button>
           </div>
@@ -466,6 +467,9 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+
+const router = useRouter()
 import {
   getLensList, createLens, updateLens, deleteLens, openLens, markLensUsedUp,
   markLensCareDone, markLensCheckupDone, startLensRest, endLensRest,
@@ -713,6 +717,13 @@ const openCareDetail = async () => {
       console.error(e)
     }
   }
+}
+
+const createOutfitPlan = (lensId) => {
+  router.push({
+    path: '/outfit-plans',
+    query: { lens_id: lensId }
+  })
 }
 
 onMounted(() => {

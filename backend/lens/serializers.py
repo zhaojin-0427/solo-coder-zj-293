@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.db.models import Sum, Avg, Count
-from .models import Lens, WearRecord, CareRecord, CareReminder
+from .models import Lens, WearRecord, CareRecord, CareReminder, OutfitPlan
 
 
 class LensSerializer(serializers.ModelSerializer):
@@ -111,3 +111,64 @@ class CareReminderSerializer(serializers.ModelSerializer):
     class Meta:
         model = CareReminder
         fields = '__all__'
+
+
+class OutfitPlanSerializer(serializers.ModelSerializer):
+    scene_name_display = serializers.CharField(source='get_scene_display_name', read_only=True)
+    makeup_style_display = serializers.CharField(source='get_makeup_display_name', read_only=True)
+    clothing_color_display = serializers.CharField(source='get_clothing_color_display', read_only=True)
+    lighting_display = serializers.CharField(source='get_lighting_display', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+
+    lens_brand = serializers.CharField(source='lens.brand', read_only=True, default='')
+    lens_model = serializers.CharField(source='lens.model_name', read_only=True, default='')
+    lens_color = serializers.CharField(source='lens.color', read_only=True, default='')
+
+    backup_lens_brand = serializers.CharField(source='backup_lens.brand', read_only=True, default='')
+    backup_lens_model = serializers.CharField(source='backup_lens.model_name', read_only=True, default='')
+
+    wear_record_id = serializers.IntegerField(source='wear_record.id', read_only=True, allow_null=True)
+    actual_duration_hours = serializers.FloatField(source='wear_record.duration_hours', read_only=True, allow_null=True)
+    actual_comfort_level = serializers.IntegerField(source='wear_record.comfort_level', read_only=True, allow_null=True)
+
+    duration_diff = serializers.SerializerMethodField()
+    comfort_diff = serializers.SerializerMethodField()
+    tag_labels = serializers.SerializerMethodField()
+
+    class Meta:
+        model = OutfitPlan
+        fields = '__all__'
+
+    def get_duration_diff(self, obj):
+        return obj.get_duration_diff()
+
+    def get_comfort_diff(self, obj):
+        return obj.get_comfort_diff()
+
+    def get_tag_labels(self, obj):
+        tag_map = dict(OutfitPlan.TAG_CHOICES)
+        return [{'key': tag, 'label': tag_map.get(tag, tag)} for tag in obj.tags or []]
+
+    def create(self, validated_data):
+        instance = super().create(validated_data)
+        return instance
+
+    def update(self, instance, validated_data):
+        instance = super().update(instance, validated_data)
+        if instance.wear_record:
+            instance.update_tags()
+            instance.save()
+        return instance
+
+
+class OutfitPlanStatsSerializer(serializers.Serializer):
+    total_plans = serializers.IntegerField()
+    pending_plans = serializers.IntegerField()
+    completed_plans = serializers.IntegerField()
+    cancelled_plans = serializers.IntegerField()
+    avg_match_score = serializers.FloatField()
+    top_makeup_styles = serializers.ListField()
+    lens_usage_by_scene = serializers.ListField()
+    match_score_ranking = serializers.ListField()
+    upcoming_plans = serializers.ListField()
+    tag_stats = serializers.DictField()

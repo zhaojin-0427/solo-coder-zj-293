@@ -36,6 +36,12 @@ const routes = [
     name: 'Statistics',
     component: () => import('@/views/Statistics.vue'),
     meta: { title: '统计分析' }
+  },
+  {
+    path: '/outfit-plans',
+    name: 'OutfitPlans',
+    component: () => import('@/views/OutfitPlans.vue'),
+    meta: { title: '妆容搭配计划' }
   }
 ]
 

@@ -151,3 +151,109 @@ export function getComfortClass(level) {
 export function renderStars(level) {
   return '⭐'.repeat(level) + '☆'.repeat(5 - level)
 }
+
+export const SCENE_OPTIONS = [
+  { value: 'daily', label: '日常通勤' },
+  { value: 'date', label: '约会' },
+  { value: 'party', label: '派对/聚会' },
+  { value: 'wedding', label: '婚礼/宴会' },
+  { value: 'photo', label: '拍照/写真' },
+  { value: 'travel', label: '旅行/出游' },
+  { value: 'interview', label: '面试/商务' },
+  { value: 'sports', label: '运动' },
+  { value: 'other', label: '其他' }
+]
+
+export const MAKEUP_STYLE_OPTIONS = [
+  { value: 'natural', label: '自然裸妆' },
+  { value: 'fresh', label: '清新淡妆' },
+  { value: 'elegant', label: '优雅知性' },
+  { value: 'sweet', label: '甜美可爱' },
+  { value: 'sexy', label: '性感妩媚' },
+  { value: 'cool', label: '酷飒欧美' },
+  { value: 'gothic', label: '哥特暗黑' },
+  { value: 'korean', label: '韩系妆容' },
+  { value: 'japanese', label: '日系妆容' },
+  { value: 'custom', label: '自定义风格' }
+]
+
+export const CLOTHING_COLOR_OPTIONS = [
+  { value: 'warm', label: '暖色系' },
+  { value: 'cool', label: '冷色系' },
+  { value: 'neutral', label: '中性色系' },
+  { value: 'earth', label: '大地色系' },
+  { value: 'pastel', label: '马卡龙色系' },
+  { value: 'monochrome', label: '黑白灰' },
+  { value: 'bright', label: '鲜艳亮色' },
+  { value: 'mixed', label: '撞色搭配' }
+]
+
+export const LIGHTING_OPTIONS = [
+  { value: 'natural_day', label: '自然光(白天)' },
+  { value: 'natural_sunset', label: '自然光(黄昏)' },
+  { value: 'indoor_soft', label: '室内柔光' },
+  { value: 'indoor_bright', label: '室内强光' },
+  { value: 'neon', label: '霓虹灯光' },
+  { value: 'candle', label: '烛光/暖光' },
+  { value: 'flash', label: '闪光灯' },
+  { value: 'mixed', label: '混合光线' }
+]
+
+export const OUTFIT_STATUS_MAP = {
+  pending: { label: '待执行', class: 'tag-yellow', icon: '⏳' },
+  completed: { label: '已执行', class: 'tag-green', icon: '✅' },
+  cancelled: { label: '已取消', class: 'tag-gray', icon: '❌' }
+}
+
+export const OUTFIT_STATUS_OPTIONS = [
+  { value: '', label: '全部状态' },
+  { value: 'pending', label: '待执行' },
+  { value: 'completed', label: '已执行' },
+  { value: 'cancelled', label: '已取消' }
+]
+
+export const OUTFIT_TAG_MAP = {
+  high_look_low_comfort: { label: '高颜值但低舒适', class: 'tag-red', icon: '👁️' },
+  comfort_low_fit: { label: '舒适但不适配场景', class: 'tag-yellow', icon: '🤔' },
+  reusable: { label: '适合重复使用', class: 'tag-green', icon: '🔄' },
+  perfect_match: { label: '完美搭配', class: 'tag-pink', icon: '✨' },
+  needs_adjustment: { label: '需要调整', class: 'tag-orange', icon: '⚙️' },
+  overtime: { label: '佩戴超时', class: 'tag-red', icon: '⏰' },
+  undertime: { label: '佩戴不足', class: 'tag-blue', icon: '⏱️' }
+}
+
+export const SCENE_ICON_MAP = {
+  daily: '🏢',
+  date: '💕',
+  party: '🎉',
+  wedding: '💒',
+  photo: '📸',
+  travel: '✈️',
+  interview: '💼',
+  sports: '🏃',
+  other: '📌'
+}
+
+export const MAKEUP_ICON_MAP = {
+  natural: '🌸',
+  fresh: '🍃',
+  elegant: '💎',
+  sweet: '🍬',
+  sexy: '🔥',
+  cool: '😎',
+  gothic: '🦇',
+  korean: '🇰🇷',
+  japanese: '🇯🇵',
+  custom: '🎨'
+}
+
+export const COLOR_ICON_MAP = {
+  warm: '🔴',
+  cool: '🔵',
+  neutral: '⚪',
+  earth: '🟤',
+  pastel: '🎀',
+  monochrome: '⬛',
+  bright: '🌈',
+  mixed: '🎨'
+}

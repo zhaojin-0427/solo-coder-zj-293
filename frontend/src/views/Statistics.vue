@@ -44,6 +44,16 @@
         <div class="stat-value">{{ overview.rest_count || 0 }}</div>
         <div class="stat-sub">即将到期: {{ overview.care_soon_count || 0 }} 副</div>
       </div>
+      <div class="stat-card pink">
+        <div class="stat-label">💄 搭配计划总数</div>
+        <div class="stat-value">{{ outfitStats.total_plans || 0 }}</div>
+        <div class="stat-sub">已完成: {{ outfitStats.completed_plans || 0 }} 个</div>
+      </div>
+      <div class="stat-card" style="background: linear-gradient(135deg, #FEF3C7, #FEF9C3);">
+        <div class="stat-label">⭐ 平均搭配评分</div>
+        <div class="stat-value" style="color: #B45309;">{{ outfitStats.avg_match_score || 0 }}</div>
+        <div class="stat-sub">待执行: {{ outfitStats.pending_plans || 0 }} 个</div>
+      </div>
     </div>
 
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
@@ -246,6 +256,105 @@
       </div>
     </div>
 
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+      <div class="card">
+        <div class="card-title">🎨 最常用妆容风格</div>
+        <div v-if="outfitStats.top_makeup_styles && outfitStats.top_makeup_styles.length" class="chart-container small" ref="makeupChartRef"></div>
+        <div v-else class="empty-state" style="padding: 40px;">
+          <div class="empty-icon">🎨</div>
+          <p>暂无妆容风格数据</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">👁️ 不同场景下镜片使用次数</div>
+        <div v-if="outfitStats.lens_usage_by_scene && outfitStats.lens_usage_by_scene.length" class="chart-container small" ref="sceneLensChartRef"></div>
+        <div v-else class="empty-state" style="padding: 40px;">
+          <div class="empty-icon">👁️</div>
+          <p>暂无场景镜片数据</p>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+      <div class="card">
+        <div class="card-title">⭐ 搭配评分排行</div>
+        <div v-if="outfitStats.match_score_ranking && outfitStats.match_score_ranking.length" class="chart-container small" ref="matchScoreChartRef"></div>
+        <div v-else class="empty-state" style="padding: 40px;">
+          <div class="empty-icon">⭐</div>
+          <p>暂无评分排行数据</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">🏷️ 搭配标签统计</div>
+        <div v-if="Object.keys(outfitStats.tag_stats || {}).length" class="chart-container small" ref="tagStatsChartRef"></div>
+        <div v-else class="empty-state" style="padding: 40px;">
+          <div class="empty-icon">🏷️</div>
+          <p>暂无标签数据</p>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+      <div class="card">
+        <div class="card-title">📊 搭配评分排行榜详情</div>
+        <table class="table" v-if="outfitStats.match_score_ranking && outfitStats.match_score_ranking.length">
+          <thead>
+            <tr>
+              <th>排名</th>
+              <th>场景</th>
+              <th>镜片</th>
+              <th>搭配评分</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(item, idx) in outfitStats.match_score_ranking.slice(0, 10)" :key="item.id">
+              <td>
+                <span v-if="idx === 0">🥇</span>
+                <span v-else-if="idx === 1">🥈</span>
+                <span v-else-if="idx === 2">🥉</span>
+                <span v-else class="text-light">{{ idx + 1 }}</span>
+              </td>
+              <td class="text-bold">{{ item.scene }}</td>
+              <td class="text-sm">{{ item.lens }}</td>
+              <td>{{ '⭐'.repeat(item.match_score) }} <span class="text-sm text-light ml-4">{{ item.match_score }}</span></td>
+            </tr>
+          </tbody>
+        </table>
+        <div v-else class="empty-state" style="padding: 30px;">
+          <p class="text-light">暂无评分排行数据</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">🏷️ 标签分布详情</div>
+        <table class="table" v-if="Object.keys(outfitStats.tag_stats || {}).length">
+          <thead>
+            <tr>
+              <th>标签</th>
+              <th>次数</th>
+              <th>占比</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(val, key) in outfitStats.tag_stats" :key="key" v-if="val.count > 0">
+              <td class="text-bold">{{ val.label }}</td>
+              <td>{{ val.count }} 次</td>
+              <td>
+                <span class="tag tag-blue">
+                  {{ outfitStats.completed_plans ? Math.round(val.count / outfitStats.completed_plans * 100) : 0 }}%
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <div v-else class="empty-state" style="padding: 30px;">
+          <p class="text-light">暂无标签数据</p>
+        </div>
+      </div>
+    </div>
+
     <div class="card mb-20">
       <div class="card-title">🔔 长期未使用镜片提醒</div>
       <table class="table" v-if="unusedLenses.length">
@@ -313,6 +422,7 @@ import {
   getStatsOverview, getBrandComfort, getWaterContentFit,
   getPurposeStats, getEyeTips, getCareStats, getCareMethodComfort
 } from '@/api/stats'
+import { getOutfitPlanStats } from '@/api/outfitPlan'
 import { getUnusedLenses, getLensList } from '@/api/lens'
 import { getRecordList } from '@/api/record'
 import {
@@ -329,6 +439,7 @@ const allRecords = ref([])
 const allLenses = ref([])
 const careStats = ref({})
 const careMethodComfort = ref([])
+const outfitStats = ref({})
 
 const brandChartRef = ref(null)
 const waterChartRef = ref(null)
@@ -338,6 +449,12 @@ const careMethodChartRef = ref(null)
 const reminderChartRef = ref(null)
 let brandChart = null, waterChart = null, purposeChart = null, hoursPieChart = null
 let careMethodChart = null, reminderChart = null
+let makeupStyleChart = null, sceneLensChart = null, matchScoreChart = null, tagStatsChart = null
+
+const makeupChartRef = ref(null)
+const sceneLensChartRef = ref(null)
+const matchScoreChartRef = ref(null)
+const tagStatsChartRef = ref(null)
 
 const lensHoursList = ref([])
 
@@ -400,7 +517,7 @@ const getCareTypeLabel = (type) => {
 
 const loadData = async () => {
   try {
-    const [ov, brands, waters, purposes, unused, tps, records, lenses, care, careMethod] = await Promise.all([
+    const [ov, brands, waters, purposes, unused, tps, records, lenses, care, careMethod, outfitSt] = await Promise.all([
       getStatsOverview(),
       getBrandComfort(),
       getWaterContentFit(),
@@ -410,7 +527,8 @@ const loadData = async () => {
       getRecordList({ page_size: 1000 }),
       getLensList(),
       getCareStats(),
-      getCareMethodComfort()
+      getCareMethodComfort(),
+      getOutfitPlanStats()
     ])
     overview.value = ov
     brandStats.value = Array.isArray(brands) ? brands : []
@@ -422,6 +540,7 @@ const loadData = async () => {
     allLenses.value = Array.isArray(lenses) ? lenses : (lenses.results || [])
     careStats.value = care || {}
     careMethodComfort.value = Array.isArray(careMethod) ? careMethod : []
+    outfitStats.value = outfitSt || {}
 
     const hoursMap = {}
     allRecords.value.forEach(r => {
@@ -441,6 +560,10 @@ const loadData = async () => {
     renderHoursPie()
     renderCareMethodChart()
     renderReminderChart()
+    renderMakeupStyleChart()
+    renderSceneLensChart()
+    renderMatchScoreChart()
+    renderTagStatsChart()
   } catch (e) {
     console.error(e)
   }
@@ -615,11 +738,120 @@ const renderReminderChart = () => {
   })
 }
 
+const renderMakeupStyleChart = () => {
+  if (!makeupChartRef.value || !outfitStats.value.top_makeup_styles?.length) return
+  if (!makeupStyleChart) makeupStyleChart = echarts.init(makeupChartRef.value)
+  const data = [...outfitStats.value.top_makeup_styles].reverse().slice(0, 10)
+  makeupStyleChart.setOption({
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    grid: { left: 120, right: 40, top: 20, bottom: 30 },
+    xAxis: { type: 'value', name: '次数' },
+    yAxis: { type: 'category', data: data.map(d => d.style) },
+    series: [{
+      type: 'bar',
+      data: data.map(d => ({
+        value: d.count,
+        itemStyle: {
+          color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+            { offset: 0, color: '#F472B6' },
+            { offset: 1, color: '#EC4899' }
+          ]),
+          borderRadius: [0, 8, 8, 0]
+        }
+      })),
+      label: { show: true, position: 'right' },
+      barWidth: 20
+    }]
+  })
+}
+
+const renderSceneLensChart = () => {
+  if (!sceneLensChartRef.value || !outfitStats.value.lens_usage_by_scene?.length) return
+  if (!sceneLensChart) sceneLensChart = echarts.init(sceneLensChartRef.value)
+  const data = outfitStats.value.lens_usage_by_scene.slice(0, 10)
+  const scenes = [...new Set(data.map(d => d.scene))]
+  const lenses = [...new Set(data.map(d => d.lens))]
+  
+  const series = lenses.map(lens => ({
+    name: lens,
+    type: 'bar',
+    stack: 'total',
+    data: scenes.map(scene => {
+      const item = data.find(d => d.scene === scene && d.lens === lens)
+      return item ? item.count : 0
+    })
+  }))
+
+  sceneLensChart.setOption({
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    legend: { type: 'scroll', bottom: 0, textStyle: { fontSize: 11 } },
+    grid: { left: 80, right: 30, top: 40, bottom: 60 },
+    xAxis: { type: 'category', data: scenes, axisLabel: { fontSize: 11, rotate: 30 } },
+    yAxis: { type: 'value', name: '使用次数' },
+    series: series
+  })
+}
+
+const renderMatchScoreChart = () => {
+  if (!matchScoreChartRef.value || !outfitStats.value.match_score_ranking?.length) return
+  if (!matchScoreChart) matchScoreChart = echarts.init(matchScoreChartRef.value)
+  const data = [...outfitStats.value.match_score_ranking].reverse().slice(0, 10)
+  matchScoreChart.setOption({
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    grid: { left: 120, right: 40, top: 20, bottom: 30 },
+    xAxis: { type: 'value', min: 0, max: 5, name: '搭配评分' },
+    yAxis: { type: 'category', data: data.map(d => `${d.scene} - ${d.lens}`) },
+    series: [{
+      type: 'bar',
+      data: data.map(d => ({
+        value: d.match_score,
+        itemStyle: {
+          color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+            { offset: 0, color: '#FBBF24' },
+            { offset: 1, color: '#F59E0B' }
+          ]),
+          borderRadius: [0, 8, 8, 0]
+        }
+      })),
+      label: { show: true, position: 'right', formatter: p => p.value + ' ⭐' },
+      barWidth: 20
+    }]
+  })
+}
+
+const renderTagStatsChart = () => {
+  if (!tagStatsChartRef.value || !Object.keys(outfitStats.value.tag_stats || {}).length) return
+  if (!tagStatsChart) tagStatsChart = echarts.init(tagStatsChartRef.value)
+  const data = Object.entries(outfitStats.value.tag_stats || {})
+    .filter(([_, v]) => v.count > 0)
+    .map(([key, val]) => ({ name: val.label, value: val.count }))
+  
+  const colors = ['#EF4444', '#F59E0B', '#10B981', '#EC4899', '#8B5CF6', '#F97316', '#3B82F6']
+  
+  tagStatsChart.setOption({
+    tooltip: { trigger: 'item', formatter: p => `${p.name}<br/>${p.value}条 (${p.percent}%)` },
+    legend: { type: 'scroll', bottom: 0, textStyle: { fontSize: 11 } },
+    series: [{
+      type: 'pie',
+      radius: ['35%', '65%'],
+      center: ['50%', '45%'],
+      itemStyle: { borderRadius: 8, borderColor: '#fff', borderWidth: 3 },
+      label: { formatter: '{b}\n{d}%', fontSize: 11 },
+      data: data.map((d, i) => ({
+        ...d,
+        itemStyle: { color: colors[i % colors.length] }
+      }))
+    }]
+  })
+}
+
 onMounted(async () => {
   await loadData()
   window.addEventListener('resize', () => {
     brandChart?.resize(); waterChart?.resize(); purposeChart?.resize(); hoursPieChart?.resize()
     careMethodChart?.resize(); reminderChart?.resize()
+    makeupStyleChart?.resize(); sceneLensChart?.resize()
+    matchScoreChart?.resize(); tagStatsChart?.resize()
   })
 })
 </script>

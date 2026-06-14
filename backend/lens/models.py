@@ -239,3 +239,155 @@ class CareReminder(models.Model):
 
     def __str__(self):
         return f'[{self.get_severity_display()}] {self.title}'
+
+
+class OutfitPlan(models.Model):
+    SCENE_CHOICES = [
+        ('daily', '日常通勤'),
+        ('date', '约会'),
+        ('party', '派对/聚会'),
+        ('wedding', '婚礼/宴会'),
+        ('photo', '拍照/写真'),
+        ('travel', '旅行/出游'),
+        ('interview', '面试/商务'),
+        ('sports', '运动'),
+        ('other', '其他'),
+    ]
+
+    MAKEUP_STYLE_CHOICES = [
+        ('natural', '自然裸妆'),
+        ('fresh', '清新淡妆'),
+        ('elegant', '优雅知性'),
+        ('sweet', '甜美可爱'),
+        ('sexy', '性感妩媚'),
+        ('cool', '酷飒欧美'),
+        ('gothic', '哥特暗黑'),
+        ('korean', '韩系妆容'),
+        ('japanese', '日系妆容'),
+        ('custom', '自定义风格'),
+    ]
+
+    CLOTHING_COLOR_CHOICES = [
+        ('warm', '暖色系'),
+        ('cool', '冷色系'),
+        ('neutral', '中性色系'),
+        ('earth', '大地色系'),
+        ('pastel', '马卡龙色系'),
+        ('monochrome', '黑白灰'),
+        ('bright', '鲜艳亮色'),
+        ('mixed', '撞色搭配'),
+    ]
+
+    LIGHTING_CHOICES = [
+        ('natural_day', '自然光(白天)'),
+        ('natural_sunset', '自然光(黄昏)'),
+        ('indoor_soft', '室内柔光'),
+        ('indoor_bright', '室内强光'),
+        ('neon', '霓虹灯光'),
+        ('candle', '烛光/暖光'),
+        ('flash', '闪光灯'),
+        ('mixed', '混合光线'),
+    ]
+
+    STATUS_CHOICES = [
+        ('pending', '待执行'),
+        ('completed', '已执行'),
+        ('cancelled', '已取消'),
+    ]
+
+    TAG_CHOICES = [
+        ('high_look_low_comfort', '高颜值但低舒适'),
+        ('comfort_low_fit', '舒适但不适配场景'),
+        ('reusable', '适合重复使用'),
+        ('perfect_match', '完美搭配'),
+        ('needs_adjustment', '需要调整'),
+        ('overtime', '佩戴超时'),
+        ('undertime', '佩戴不足'),
+    ]
+
+    lens = models.ForeignKey(Lens, on_delete=models.SET_NULL, null=True, blank=True, related_name='outfit_plans', verbose_name='推荐镜片')
+    backup_lens = models.ForeignKey(Lens, on_delete=models.SET_NULL, null=True, blank=True, related_name='backup_outfit_plans', verbose_name='备选镜片')
+    scene_name = models.CharField('场景名称', max_length=50, choices=SCENE_CHOICES, default='daily')
+    custom_scene_name = models.CharField('自定义场景', max_length=100, blank=True, default='')
+    makeup_style = models.CharField('妆容风格', max_length=30, choices=MAKEUP_STYLE_CHOICES, default='natural')
+    custom_makeup_style = models.CharField('自定义妆容风格', max_length=100, blank=True, default='')
+    clothing_color = models.CharField('服饰色系', max_length=30, choices=CLOTHING_COLOR_CHOICES, default='neutral')
+    lighting = models.CharField('光线环境', max_length=30, choices=LIGHTING_CHOICES, default='natural_day')
+    expected_wear_date = models.DateField('预计佩戴日期')
+    expected_duration_hours = models.FloatField('预计佩戴时长(小时)', default=8.0)
+    match_score = models.IntegerField('搭配评分(1-5)', default=4)
+    notes = models.TextField('备注', blank=True, default='')
+    status = models.CharField('状态', max_length=20, choices=STATUS_CHOICES, default='pending')
+    tags = models.JSONField('标签', default=list, blank=True)
+    wear_record = models.OneToOneField(WearRecord, on_delete=models.SET_NULL, null=True, blank=True, related_name='outfit_plan', verbose_name='关联佩戴记录')
+    executed_at = models.DateTimeField('执行时间', null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'outfit_plan'
+        ordering = ['-expected_wear_date', '-created_at']
+        verbose_name = '妆容搭配计划'
+        verbose_name_plural = verbose_name
+
+    def __str__(self):
+        scene = self.custom_scene_name or self.get_scene_name_display()
+        return f'{scene} - {self.expected_wear_date}'
+
+    def get_scene_display_name(self):
+        return self.custom_scene_name or self.get_scene_name_display()
+
+    def get_makeup_display_name(self):
+        return self.custom_makeup_style or self.get_makeup_style_display()
+
+    def generate_tags(self):
+        if not self.wear_record:
+            return []
+
+        tags = []
+        record = self.wear_record
+
+        if self.match_score >= 4 and record.comfort_level <= 2:
+            tags.append('high_look_low_comfort')
+
+        if self.match_score <= 2 and record.comfort_level >= 4:
+            tags.append('comfort_low_fit')
+
+        if self.match_score >= 4 and record.comfort_level >= 4:
+            tags.append('perfect_match')
+
+        if self.match_score >= 4 and record.comfort_level >= 4 and abs(record.duration_hours - self.expected_duration_hours) <= 1:
+            tags.append('reusable')
+
+        if self.match_score <= 2 or record.comfort_level <= 2:
+            tags.append('needs_adjustment')
+
+        if record.duration_hours > self.expected_duration_hours + 1:
+            tags.append('overtime')
+
+        if record.duration_hours < self.expected_duration_hours - 1:
+            tags.append('undertime')
+
+        return tags
+
+    def update_tags(self):
+        self.tags = self.generate_tags()
+        return self.tags
+
+    def mark_as_completed(self, wear_record=None):
+        self.status = 'completed'
+        self.executed_at = timezone.now()
+        if wear_record:
+            self.wear_record = wear_record
+            self.update_tags()
+        self.save()
+
+    def get_duration_diff(self):
+        if not self.wear_record:
+            return None
+        return round(self.wear_record.duration_hours - self.expected_duration_hours, 1)
+
+    def get_comfort_diff(self):
+        if not self.wear_record:
+            return None
+        return self.wear_record.comfort_level - self.match_score

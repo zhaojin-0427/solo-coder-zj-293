@@ -51,6 +51,39 @@
         <div class="stat-label">🚨 已过期未处理</div>
         <div class="stat-value" style="color: #DC2626;">{{ overview.expired_count || 0 }} 副</div>
       </div>
+      <div class="stat-card" style="background: linear-gradient(135deg, #FCE7F3, #FBCFE8);">
+        <div class="stat-label">💄 搭配计划</div>
+        <div class="stat-value" style="color: #BE185D;">{{ outfitStats.total_plans || 0 }} 个</div>
+      </div>
+      <div class="stat-card" style="background: linear-gradient(135deg, #DBEAFE, #BFDBFE);">
+        <div class="stat-label">⏳ 待执行</div>
+        <div class="stat-value" style="color: #1D4ED8;">{{ outfitStats.pending_plans || 0 }} 个</div>
+      </div>
+      <div class="stat-card" style="background: linear-gradient(135deg, #FEF3C7, #FEF9C3);">
+        <div class="stat-label">⭐ 平均搭配分</div>
+        <div class="stat-value" style="color: #B45309;">{{ outfitStats.avg_match_score || 0 }}</div>
+      </div>
+    </div>
+
+    <div v-if="overduePlans.length" class="card mb-20" style="border-left: 4px solid #EF4444;">
+      <div class="flex-between mb-16">
+        <div class="card-title" style="margin-bottom: 0; color: #DC2626;">
+          ⚠️ 逾期未执行计划提醒（{{ overduePlans.length }}）
+        </div>
+        <router-link to="/outfit-plans" class="btn btn-link text-sm">查看全部 →</router-link>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div v-for="plan in overduePlans.slice(0, 3)" :key="plan.id"
+             class="flex-between"
+             style="padding: 10px; background: #FEF2F2; border-radius: 6px;">
+          <div>
+            <span class="text-bold">{{ getSceneIcon(plan.scene_name) }} {{ plan.scene_name_display }}</span>
+            <span class="text-sm text-light ml-8">{{ formatDate(plan.expected_wear_date) }}</span>
+            <span class="text-sm ml-8">{{ renderStars(plan.match_score) }}</span>
+          </div>
+          <span class="tag tag-red">已逾期</span>
+        </div>
+      </div>
     </div>
 
     <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px;">
@@ -128,6 +161,65 @@
         </div>
       </div>
     </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px;">
+      <div class="card">
+        <div class="flex-between mb-16">
+          <div class="card-title" style="margin-bottom: 0;">📅 近期搭配计划</div>
+          <router-link to="/outfit-plans" class="btn btn-link text-sm">查看全部 →</router-link>
+        </div>
+        <div v-if="upcomingPlans.length">
+          <div v-for="plan in upcomingPlans.slice(0, 4)" :key="plan.id"
+               class="flex-between"
+               style="padding: 12px; background: #FAFAFA; border-radius: 8px; margin-bottom: 8px;">
+            <div>
+              <div class="text-bold">
+                {{ getSceneIcon(plan.scene_name) }} {{ plan.scene_name_display }}
+              </div>
+              <div class="text-sm text-light">
+                {{ formatDate(plan.expected_wear_date) }} · {{ plan.expected_duration_hours }}h · {{ renderStars(plan.match_score) }}
+              </div>
+              <div v-if="plan.lens_brand" class="text-sm text-light mt-4">
+                👁️ {{ plan.lens_brand }} {{ plan.lens_model }}
+              </div>
+            </div>
+            <span class="tag" :class="OUTFIT_STATUS_MAP[plan.status]?.class">
+              {{ OUTFIT_STATUS_MAP[plan.status]?.icon }} {{ OUTFIT_STATUS_MAP[plan.status]?.label }}
+            </span>
+          </div>
+        </div>
+        <div v-else class="empty-state" style="padding: 30px 10px;">
+          <div class="empty-icon">💄</div>
+          <p>暂无近期搭配计划</p>
+          <router-link to="/outfit-plans" class="btn btn-primary btn-sm mt-8">创建计划</router-link>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="flex-between mb-16">
+          <div class="card-title" style="margin-bottom: 0;">🏆 常用妆容风格</div>
+          <router-link to="/stats" class="btn btn-link text-sm">更多统计 →</router-link>
+        </div>
+        <div v-if="outfitStats.top_makeup_styles && outfitStats.top_makeup_styles.length">
+          <div v-for="(style, idx) in outfitStats.top_makeup_styles.slice(0, 5)" :key="style.style"
+               class="flex-between"
+               style="padding: 10px 12px; background: #FAFAFA; border-radius: 8px; margin-bottom: 6px;">
+            <div>
+              <span v-if="idx === 0">🥇</span>
+              <span v-else-if="idx === 1">🥈</span>
+              <span v-else-if="idx === 2">🥉</span>
+              <span v-else class="text-light">{{ idx + 1 }}.</span>
+              <span class="ml-8 text-bold">{{ style.style }}</span>
+            </div>
+            <span class="tag tag-pink">{{ style.count }} 次</span>
+          </div>
+        </div>
+        <div v-else class="empty-state" style="padding: 30px 10px;">
+          <div class="empty-icon">🎨</div>
+          <p>暂无妆容风格统计</p>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -137,15 +229,21 @@ import * as echarts from 'echarts'
 import { getStatsOverview, getComfortTrend, getEyeTips } from '@/api/stats'
 import { getExpiringLenses } from '@/api/lens'
 import { getTodayWarning, getRecordList } from '@/api/record'
-import { formatDate } from '@/utils/constants'
+import { getUpcomingPlans, getOverduePlans, getOutfitPlanStats } from '@/api/outfitPlan'
+import { formatDate, renderStars, OUTFIT_STATUS_MAP, SCENE_ICON_MAP } from '@/utils/constants'
 
 const overview = ref({})
 const todayWarning = ref(null)
 const tips = ref([])
 const expiringLenses = ref([])
 const recentRecords = ref([])
+const upcomingPlans = ref([])
+const overduePlans = ref([])
+const outfitStats = ref({})
 const comfortChartRef = ref(null)
 let chartInstance = null
+
+const getSceneIcon = (scene) => SCENE_ICON_MAP[scene] || '📌'
 
 const alertClass = computed(() => {
   if (!todayWarning.value) return ''
@@ -181,19 +279,25 @@ const progressClass = computed(() => {
 
 const loadData = async () => {
   try {
-    const [ov, warn, tp, exp, rec, trend] = await Promise.all([
+    const [ov, warn, tp, exp, rec, trend, upcoming, overdue, outfitSt] = await Promise.all([
       getStatsOverview(),
       getTodayWarning().catch(() => null),
       getEyeTips(),
       getExpiringLenses(30),
       getRecordList({ page_size: 10 }),
-      getComfortTrend(30)
+      getComfortTrend(30),
+      getUpcomingPlans(7),
+      getOverduePlans(),
+      getOutfitPlanStats()
     ])
     overview.value = ov
     todayWarning.value = warn
     tips.value = tp
     expiringLenses.value = Array.isArray(exp) ? exp : (exp.results || [])
     recentRecords.value = Array.isArray(rec) ? rec : (rec.results || [])
+    upcomingPlans.value = Array.isArray(upcoming) ? upcoming : (upcoming.results || [])
+    overduePlans.value = Array.isArray(overdue) ? overdue : (overdue.results || [])
+    outfitStats.value = outfitSt || {}
     renderComfortChart(trend || [])
   } catch (e) {
     console.error(e)
