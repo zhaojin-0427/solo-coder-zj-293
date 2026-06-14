@@ -81,6 +81,15 @@
                     class="tag" :class="CARE_STATUS_MAP[lens.care_status]?.class">
                 {{ CARE_STATUS_MAP[lens.care_status]?.icon }} {{ CARE_STATUS_MAP[lens.care_status]?.label }}
               </span>
+              <span v-if="lens.remaining_stock != null" class="tag tag-blue">
+                📦 库存: {{ lens.remaining_stock }}片
+              </span>
+              <span v-if="lens.restock_status" class="tag" :class="lens.restock_status.class">
+                {{ lens.restock_status.label }}
+              </span>
+              <span v-if="lens.usage_frequency" class="tag" :class="USAGE_FREQUENCY_MAP[lens.usage_frequency]?.class">
+                {{ USAGE_FREQUENCY_MAP[lens.usage_frequency]?.label }}
+              </span>
             </div>
           </div>
         </div>
@@ -195,6 +204,7 @@
           <div class="nav-tabs" style="margin-bottom: 16px;">
             <button class="nav-tab" :class="{ active: formTab === 'basic' }" @click="formTab = 'basic'">基本信息</button>
             <button class="nav-tab" :class="{ active: formTab === 'care' }" @click="formTab = 'care'">护理计划</button>
+            <button class="nav-tab" :class="{ active: formTab === 'budget' }" @click="formTab = 'budget'">预算补货</button>
           </div>
 
           <div v-if="formTab === 'basic'">
@@ -326,6 +336,76 @@
                          type="date" class="form-control" style="flex: 1;" placeholder="停戴至">
                 </div>
               </div>
+            </div>
+          </div>
+
+          <div v-if="formTab === 'budget'">
+            <div class="alert alert-info" style="margin-bottom: 16px;">
+              <div class="alert-icon">💰</div>
+              <div class="alert-content">
+                <div class="alert-title">预算与补货设置</div>
+                <div class="alert-message" style="font-size: 12px;">设置购买信息和补货参数，系统会根据库存和使用频率自动生成补货建议。</div>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">购买渠道</label>
+                <select v-model="form.purchase_channel" class="form-control">
+                  <option v-for="opt in PURCHASE_CHANNEL_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">单价(元)</label>
+                <input v-model.number="form.unit_price" type="number" step="0.01" class="form-control" placeholder="0.00">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">折扣(%)</label>
+                <input v-model.number="form.discount" type="number" step="0.01" class="form-control" placeholder="100">
+              </div>
+              <div class="form-group">
+                <label class="form-label">运费(元)</label>
+                <input v-model.number="form.shipping_fee" type="number" step="0.01" class="form-control" placeholder="0.00">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">库存数量(片)</label>
+                <input v-model.number="form.stock_quantity" type="number" class="form-control" placeholder="2">
+              </div>
+              <div class="form-group">
+                <label class="form-label">常用程度</label>
+                <select v-model="form.usage_frequency" class="form-control">
+                  <option v-for="opt in USAGE_FREQUENCY_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">计划补货日期</label>
+                <input v-model="form.planned_restock_date" type="date" class="form-control">
+              </div>
+              <div class="form-group">
+                <label class="form-label">补货优先级</label>
+                <select v-model="form.restock_priority" class="form-control">
+                  <option v-for="opt in RESTOCK_PRIORITY_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">预算月份</label>
+                <input v-model="form.budget_month" class="form-control" placeholder="YYYY-MM">
+              </div>
+              <div class="form-group">
+                <label class="form-label">实付金额(元)</label>
+                <input v-model.number="form.total_paid" type="number" step="0.01" class="form-control" placeholder="0.00">
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">补货备注</label>
+              <textarea v-model="form.restock_notes" class="form-control" placeholder="记录补货相关的备注信息..."></textarea>
             </div>
           </div>
         </div>
@@ -480,7 +560,9 @@ import {
   STATUS_MAP, PURPOSE_MAP, STATUS_OPTIONS, PURPOSE_OPTIONS, formatDate, renderStars,
   CARE_METHOD_MAP, CARE_METHOD_OPTIONS, REPLACEMENT_CYCLE_OPTIONS,
   CARE_STATUS_MAP, CARE_STATUS_FILTER_OPTIONS,
-  REMINDER_TYPE_MAP, SEVERITY_MAP
+  REMINDER_TYPE_MAP, SEVERITY_MAP,
+  RESTOCK_STATUS_MAP, USAGE_FREQUENCY_MAP, USAGE_FREQUENCY_OPTIONS,
+  PURCHASE_CHANNEL_OPTIONS, RESTOCK_PRIORITY_OPTIONS
 } from '@/utils/constants'
 
 const lenses = ref([])
@@ -513,7 +595,18 @@ const defaultForm = {
   care_method: '', care_solution_brand: '',
   replacement_days_after_open: '',
   next_care_date: '', next_checkup_date: '',
-  need_rest_observation: false, rest_until_date: ''
+  need_rest_observation: false, rest_until_date: '',
+  purchase_channel: 'taobao',
+  unit_price: 0,
+  discount: 100,
+  shipping_fee: 0,
+  total_paid: 0,
+  stock_quantity: 2,
+  usage_frequency: 'occasional',
+  planned_restock_date: '',
+  restock_priority: 'medium',
+  budget_month: '',
+  restock_notes: ''
 }
 const form = ref({ ...defaultForm })
 
@@ -576,6 +669,17 @@ const openEdit = (lens) => {
     rest_until_date: lens.rest_until_date || '',
     replacement_days_after_open: lens.replacement_days_after_open || '',
     care_method: lens.care_method || '',
+    purchase_channel: lens.purchase_channel || 'taobao',
+    unit_price: lens.unit_price || 0,
+    discount: lens.discount || 100,
+    shipping_fee: lens.shipping_fee || 0,
+    total_paid: lens.total_paid || 0,
+    stock_quantity: lens.stock_quantity || 2,
+    usage_frequency: lens.usage_frequency || 'occasional',
+    planned_restock_date: lens.planned_restock_date || '',
+    restock_priority: lens.restock_priority || 'medium',
+    budget_month: lens.budget_month || '',
+    restock_notes: lens.restock_notes || '',
   }
   showModal.value = true
 }

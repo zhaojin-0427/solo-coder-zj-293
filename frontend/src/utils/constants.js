@@ -257,3 +257,93 @@ export const COLOR_ICON_MAP = {
   bright: '🌈',
   mixed: '🎨'
 }
+
+export const PURCHASE_CHANNEL_OPTIONS = [
+  { value: 'taobao', label: '淘宝' },
+  { value: 'tmall', label: '天猫' },
+  { value: 'jd', label: '京东' },
+  { value: 'pdd', label: '拼多多' },
+  { value: 'xiaohongshu', label: '小红书' },
+  { value: 'offline', label: '线下实体店' },
+  { value: 'other', label: '其他渠道' }
+]
+
+export const PAYMENT_STATUS_OPTIONS = [
+  { value: 'pending', label: '待付款' },
+  { value: 'paid', label: '已付款' },
+  { value: 'refunded', label: '已退款' }
+]
+
+export const PAYMENT_STATUS_MAP = {
+  pending: { label: '待付款', class: 'tag-yellow' },
+  paid: { label: '已付款', class: 'tag-green' },
+  refunded: { label: '已退款', class: 'tag-gray' }
+}
+
+export const USAGE_FREQUENCY_OPTIONS = [
+  { value: 'frequent', label: '常用' },
+  { value: 'occasional', label: '偶尔' },
+  { value: 'rare', label: '很少' }
+]
+
+export const USAGE_FREQUENCY_MAP = {
+  frequent: { label: '常用', class: 'tag-green' },
+  occasional: { label: '偶尔', class: 'tag-blue' },
+  rare: { label: '很少', class: 'tag-gray' }
+}
+
+export const RESTOCK_PRIORITY_OPTIONS = [
+  { value: 'high', label: '高优先级' },
+  { value: 'medium', label: '中优先级' },
+  { value: 'low', label: '低优先级' }
+]
+
+export const RESTOCK_PRIORITY_MAP = {
+  high: { label: '高优先级', class: 'tag-red' },
+  medium: { label: '中优先级', class: 'tag-yellow' },
+  low: { label: '低优先级', class: 'tag-green' }
+}
+
+export const RESTOCK_STATUS_MAP = {
+  used_up: { label: '已用完', class: 'tag-gray', icon: '✅' },
+  expired: { label: '已过期', class: 'tag-red', icon: '⚠️' },
+  out_of_stock: { label: '已无库存', class: 'tag-red', icon: '🔴' },
+  urgent: { label: '库存紧急', class: 'tag-red', icon: '🚨' },
+  low: { label: '库存不足', class: 'tag-yellow', icon: '🟡' },
+  expiring_with_stock: { label: '临期有库存', class: 'tag-yellow', icon: '⏰' },
+  planned_soon: { label: '计划补货中', class: 'tag-blue', icon: '📅' },
+  normal: { label: '库存充足', class: 'tag-green', icon: '✅' }
+}
+
+export const RESTOCK_SUGGESTION_TYPE_MAP = {
+  low_stock: { label: '库存不足', class: 'tag-red', icon: '📦' },
+  expiring_soon: { label: '即将过期', class: 'tag-yellow', icon: '⏰' },
+  high_usage: { label: '高频使用', class: 'tag-blue', icon: '🔥' },
+  long_unused: { label: '长期未用', class: 'tag-gray', icon: '📅' },
+  low_comfort: { label: '低舒适度', class: 'tag-orange', icon: '😣' },
+  planned: { label: '计划补货', class: 'tag-blue', icon: '📋' },
+  seasonal: { label: '季节性补货', class: 'tag-pink', icon: '🌸' }
+}
+
+export const RESTOCK_SEVERITY_MAP = {
+  critical: { label: '紧急', class: 'tag-red' },
+  important: { label: '重要', class: 'tag-yellow' },
+  normal: { label: '常规', class: 'tag-blue' }
+}
+
+export const RESTOCK_SUGGESTION_TYPE_OPTIONS = [
+  { value: '', label: '全部类型' },
+  { value: 'low_stock', label: '库存不足' },
+  { value: 'expiring_soon', label: '即将过期' },
+  { value: 'high_usage', label: '高频使用' },
+  { value: 'long_unused', label: '长期未用' },
+  { value: 'low_comfort', label: '低舒适度' },
+  { value: 'planned', label: '计划补货' }
+]
+
+export const RESTOCK_SEVERITY_OPTIONS = [
+  { value: '', label: '全部级别' },
+  { value: 'critical', label: '紧急' },
+  { value: 'important', label: '重要' },
+  { value: 'normal', label: '常规' }
+]

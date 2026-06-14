@@ -56,6 +56,82 @@
       </div>
     </div>
 
+    <div v-if="budgetStats.is_over_budget" class="alert alert-danger mb-20">
+      <div class="alert-icon">⚠️</div>
+      <div class="alert-content">
+        <div class="alert-title">预算超支提醒</div>
+        <div class="alert-message">
+          本月彩瞳消费已超出预算 ¥{{ ((budgetStats.total_spent_month || 0) - budgetLimit).toFixed(2) }}，
+          建议控制后续采购支出。当前预算限额：¥{{ budgetLimit }}，已使用 {{ budgetStats.budget_used_percent || 0 }}%。
+        </div>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+      <div class="card">
+        <div class="card-title">📈 月度消费趋势（近12个月）</div>
+        <div v-if="budgetStats.monthly_trend?.length" class="chart-container small" ref="budgetMonthlyTrendChartRef"></div>
+        <div v-else class="empty-state" style="padding: 40px;">
+          <div class="empty-icon">📊</div>
+          <p>暂无消费数据</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">🏆 品牌性价比排行</div>
+        <div v-if="budgetStats.brand_value_ranking?.length" class="chart-container small" ref="brandValueChartRef"></div>
+        <div v-else class="empty-state" style="padding: 40px;">
+          <div class="empty-icon">🏆</div>
+          <p>暂无性价比数据</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mb-20">
+      <div class="flex-between mb-16">
+        <div class="card-title" style="margin-bottom: 0;">💰 品牌性价比详情</div>
+        <div class="text-sm text-light">性价比 = 舒适度 / 单次佩戴成本</div>
+      </div>
+      <table class="table" v-if="budgetStats.brand_value_ranking?.length">
+        <thead>
+          <tr>
+            <th>排名</th>
+            <th>品牌</th>
+            <th>型号</th>
+            <th>平均舒适</th>
+            <th>每次成本</th>
+            <th>累计花费</th>
+            <th>佩戴次数</th>
+            <th>性价比</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="(b, idx) in budgetStats.brand_value_ranking" :key="b.lens_id">
+            <td>
+              <span v-if="idx === 0">🥇</span>
+              <span v-else-if="idx === 1">🥈</span>
+              <span v-else-if="idx === 2">🥉</span>
+              <span v-else class="text-light">{{ idx + 1 }}</span>
+            </td>
+            <td class="text-bold">{{ b.brand }}</td>
+            <td class="text-sm text-light">{{ b.model }}</td>
+            <td>{{ '⭐'.repeat(Math.round(b.avg_comfort)) }} {{ b.avg_comfort }}</td>
+            <td>¥{{ b.cost_per_wear }}</td>
+            <td>¥{{ b.total_spent.toFixed(2) }}</td>
+            <td>{{ b.total_wears || 0 }} 次</td>
+            <td>
+              <span :class="b.value_score >= 7 ? 'tag tag-green' : b.value_score >= 4 ? 'tag tag-yellow' : 'tag tag-red'">
+                {{ b.value_score }}
+              </span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <div v-else class="empty-state" style="padding: 30px;">
+        <p class="text-light">暂无数据</p>
+      </div>
+    </div>
+
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
       <div class="card">
         <div class="card-title">🏆 品牌舒适度排行榜</div>
@@ -425,8 +501,10 @@ import {
 import { getOutfitPlanStats } from '@/api/outfitPlan'
 import { getUnusedLenses, getLensList } from '@/api/lens'
 import { getRecordList } from '@/api/record'
+import { getBudgetStats, getBudgetMonthlySummary } from '@/api/budget'
 import {
-  formatDate, getComfortClass, CARE_STATUS_MAP, CARE_TYPE_OPTIONS
+  formatDate, getComfortClass, CARE_STATUS_MAP, CARE_TYPE_OPTIONS,
+  RESTOCK_PRIORITY_MAP
 } from '@/utils/constants'
 
 const overview = ref({})
@@ -440,6 +518,8 @@ const allLenses = ref([])
 const careStats = ref({})
 const careMethodComfort = ref([])
 const outfitStats = ref({})
+const budgetStats = ref({})
+const budgetLimit = ref(500)
 
 const brandChartRef = ref(null)
 const waterChartRef = ref(null)
@@ -450,11 +530,14 @@ const reminderChartRef = ref(null)
 let brandChart = null, waterChart = null, purposeChart = null, hoursPieChart = null
 let careMethodChart = null, reminderChart = null
 let makeupStyleChart = null, sceneLensChart = null, matchScoreChart = null, tagStatsChart = null
+let budgetMonthlyTrendChart = null, brandValueChart = null
 
 const makeupChartRef = ref(null)
 const sceneLensChartRef = ref(null)
 const matchScoreChartRef = ref(null)
 const tagStatsChartRef = ref(null)
+const budgetMonthlyTrendChartRef = ref(null)
+const brandValueChartRef = ref(null)
 
 const lensHoursList = ref([])
 
@@ -517,7 +600,7 @@ const getCareTypeLabel = (type) => {
 
 const loadData = async () => {
   try {
-    const [ov, brands, waters, purposes, unused, tps, records, lenses, care, careMethod, outfitSt] = await Promise.all([
+    const [ov, brands, waters, purposes, unused, tps, records, lenses, care, careMethod, outfitSt, budgetSt] = await Promise.all([
       getStatsOverview(),
       getBrandComfort(),
       getWaterContentFit(),
@@ -528,7 +611,8 @@ const loadData = async () => {
       getLensList(),
       getCareStats(),
       getCareMethodComfort(),
-      getOutfitPlanStats()
+      getOutfitPlanStats(),
+      getBudgetStats({ limit: budgetLimit.value }).catch(() => ({}))
     ])
     overview.value = ov
     brandStats.value = Array.isArray(brands) ? brands : []
@@ -541,6 +625,7 @@ const loadData = async () => {
     careStats.value = care || {}
     careMethodComfort.value = Array.isArray(careMethod) ? careMethod : []
     outfitStats.value = outfitSt || {}
+    budgetStats.value = budgetSt || {}
 
     const hoursMap = {}
     allRecords.value.forEach(r => {
@@ -564,6 +649,8 @@ const loadData = async () => {
     renderSceneLensChart()
     renderMatchScoreChart()
     renderTagStatsChart()
+    renderBudgetMonthlyTrendChart()
+    renderBrandValueChart()
   } catch (e) {
     console.error(e)
   }
@@ -845,6 +932,99 @@ const renderTagStatsChart = () => {
   })
 }
 
+const renderBudgetMonthlyTrendChart = () => {
+  if (!budgetMonthlyTrendChartRef.value || !budgetStats.value.monthly_trend?.length) return
+  if (!budgetMonthlyTrendChart) budgetMonthlyTrendChart = echarts.init(budgetMonthlyTrendChartRef.value)
+  const data = budgetStats.value.monthly_trend
+  budgetMonthlyTrendChart.setOption({
+    tooltip: { trigger: 'axis' },
+    legend: { data: ['消费金额', '采购次数'], top: 0 },
+    grid: { left: 50, right: 60, top: 40, bottom: 40 },
+    xAxis: {
+      type: 'category',
+      data: data.map(d => d.month.slice(5) + '月'),
+      axisLabel: { fontSize: 11 }
+    },
+    yAxis: [
+      { type: 'value', name: '元' },
+      { type: 'value', name: '次' }
+    ],
+    series: [
+      {
+        name: '消费金额',
+        type: 'bar',
+        data: data.map(d => d.total_spent),
+        itemStyle: {
+          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+            { offset: 0, color: '#8B5CF6' },
+            { offset: 1, color: '#A78BFA' }
+          ]),
+          borderRadius: [6, 6, 0, 0]
+        }
+      },
+      {
+        name: '采购次数',
+        type: 'line',
+        yAxisIndex: 1,
+        data: data.map(d => d.purchase_count),
+        smooth: true,
+        itemStyle: { color: '#F472B6' },
+        lineStyle: { width: 3 }
+      }
+    ]
+  })
+}
+
+const renderBrandValueChart = () => {
+  if (!brandValueChartRef.value || !budgetStats.value.brand_value_ranking?.length) return
+  if (!brandValueChart) brandValueChart = echarts.init(brandValueChartRef.value)
+  const data = budgetStats.value.brand_value_ranking.slice(0, 8).reverse()
+  brandValueChart.setOption({
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    legend: { data: ['性价比评分', '平均舒适度'], top: 0 },
+    grid: { left: 120, right: 50, top: 40, bottom: 30 },
+    xAxis: [
+      { type: 'value', min: 0, max: 10, name: '评分' },
+      { type: 'value', min: 0, max: 5, name: '舒适度' }
+    ],
+    yAxis: {
+      type: 'category',
+      data: data.map(d => `${d.brand} ${d.model}`),
+      axisLabel: { fontSize: 11 }
+    },
+    series: [
+      {
+        name: '性价比评分',
+        type: 'bar',
+        data: data.map(d => d.value_score),
+        itemStyle: {
+          color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+            { offset: 0, color: '#FBBF24' },
+            { offset: 1, color: '#F59E0B' }
+          ]),
+          borderRadius: [0, 8, 8, 0]
+        },
+        label: { show: true, position: 'right' },
+        barWidth: 14
+      },
+      {
+        name: '平均舒适度',
+        type: 'bar',
+        xAxisIndex: 1,
+        data: data.map(d => d.avg_comfort),
+        itemStyle: {
+          color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+            { offset: 0, color: '#34D399' },
+            { offset: 1, color: '#10B981' }
+          ]),
+          borderRadius: [0, 8, 8, 0]
+        },
+        barWidth: 14
+      }
+    ]
+  })
+}
+
 onMounted(async () => {
   await loadData()
   window.addEventListener('resize', () => {
@@ -852,6 +1032,7 @@ onMounted(async () => {
     careMethodChart?.resize(); reminderChart?.resize()
     makeupStyleChart?.resize(); sceneLensChart?.resize()
     matchScoreChart?.resize(); tagStatsChart?.resize()
+    budgetMonthlyTrendChart?.resize(); brandValueChart?.resize()
   })
 })
 </script>

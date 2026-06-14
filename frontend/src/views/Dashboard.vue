@@ -86,6 +86,45 @@
       </div>
     </div>
 
+    <div v-if="restockSuggestions.length" class="card mb-20" style="border-left: 4px solid #8B5CF6;">
+      <div class="flex-between mb-16">
+        <div class="card-title" style="margin-bottom: 0; color: #7C3AED;">
+          💡 近期补货提醒（{{ restockSuggestions.length }}）
+        </div>
+        <router-link to="/budget" class="btn btn-link text-sm">查看全部 →</router-link>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <div v-for="sug in restockSuggestions.slice(0, 3)" :key="sug.id"
+             :class="['restock-suggestion-item', sug.severity]">
+          <div style="display: flex; gap: 12px; align-items: flex-start;">
+            <div style="font-size: 20px;">
+              {{ RESTOCK_SUGGESTION_TYPE_MAP[sug.suggestion_type]?.icon }}
+            </div>
+            <div style="flex: 1;">
+              <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 4px;">
+                <span class="text-bold">{{ sug.title }}</span>
+                <span class="tag" :class="RESTOCK_SEVERITY_MAP[sug.severity]?.class">
+                  {{ RESTOCK_SEVERITY_MAP[sug.severity]?.label }}
+                </span>
+              </div>
+              <div class="text-sm text-light">{{ sug.message }}</div>
+              <div class="text-xs text-light mt-4">
+                镜片: {{ sug.lens_brand }} {{ sug.lens_model }} · 库存: {{ sug.lens_remaining_stock }} 片
+                <span v-if="sug.estimated_days_left != null"> · 预计可用: {{ sug.estimated_days_left }} 天</span>
+              </div>
+            </div>
+            <div style="display: flex; gap: 4px;">
+              <button class="btn btn-sm btn-success" @click="handleMarkActionTaken(sug.id)">已处理</button>
+              <button class="btn btn-sm btn-secondary" @click="handleDismissSuggestion(sug.id)">忽略</button>
+            </div>
+          </div>
+        </div>
+        <div v-if="restockSuggestions.length > 3" class="text-sm text-light text-center mt-8">
+          还有 {{ restockSuggestions.length - 3 }} 条补货提醒...
+        </div>
+      </div>
+    </div>
+
     <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px;">
       <div class="card">
         <div class="card-title">📈 近30天舒适度趋势</div>
@@ -230,7 +269,8 @@ import { getStatsOverview, getComfortTrend, getEyeTips } from '@/api/stats'
 import { getExpiringLenses } from '@/api/lens'
 import { getTodayWarning, getRecordList } from '@/api/record'
 import { getUpcomingPlans, getOverduePlans, getOutfitPlanStats } from '@/api/outfitPlan'
-import { formatDate, renderStars, OUTFIT_STATUS_MAP, SCENE_ICON_MAP } from '@/utils/constants'
+import { getActiveRestockSuggestions, markRestockActionTaken, dismissRestockSuggestion } from '@/api/budget'
+import { formatDate, renderStars, OUTFIT_STATUS_MAP, SCENE_ICON_MAP, RESTOCK_SUGGESTION_TYPE_MAP, RESTOCK_SEVERITY_MAP } from '@/utils/constants'
 
 const overview = ref({})
 const todayWarning = ref(null)
@@ -240,6 +280,7 @@ const recentRecords = ref([])
 const upcomingPlans = ref([])
 const overduePlans = ref([])
 const outfitStats = ref({})
+const restockSuggestions = ref([])
 const comfortChartRef = ref(null)
 let chartInstance = null
 
@@ -279,7 +320,7 @@ const progressClass = computed(() => {
 
 const loadData = async () => {
   try {
-    const [ov, warn, tp, exp, rec, trend, upcoming, overdue, outfitSt] = await Promise.all([
+    const [ov, warn, tp, exp, rec, trend, upcoming, overdue, outfitSt, restock] = await Promise.all([
       getStatsOverview(),
       getTodayWarning().catch(() => null),
       getEyeTips(),
@@ -288,7 +329,8 @@ const loadData = async () => {
       getComfortTrend(30),
       getUpcomingPlans(7),
       getOverduePlans(),
-      getOutfitPlanStats()
+      getOutfitPlanStats(),
+      getActiveRestockSuggestions().catch(() => [])
     ])
     overview.value = ov
     todayWarning.value = warn
@@ -298,7 +340,26 @@ const loadData = async () => {
     upcomingPlans.value = Array.isArray(upcoming) ? upcoming : (upcoming.results || [])
     overduePlans.value = Array.isArray(overdue) ? overdue : (overdue.results || [])
     outfitStats.value = outfitSt || {}
+    restockSuggestions.value = Array.isArray(restock) ? restock : (restock.results || [])
     renderComfortChart(trend || [])
+  } catch (e) {
+    console.error(e)
+  }
+}
+
+const handleMarkActionTaken = async (id) => {
+  try {
+    await markRestockActionTaken(id)
+    loadData()
+  } catch (e) {
+    console.error(e)
+  }
+}
+
+const handleDismissSuggestion = async (id) => {
+  try {
+    await dismissRestockSuggestion(id)
+    loadData()
   } catch (e) {
     console.error(e)
   }
@@ -358,3 +419,27 @@ onMounted(() => {
   window.addEventListener('resize', () => chartInstance?.resize())
 })
 </script>
+
+<style scoped>
+.restock-suggestion-item {
+  padding: 12px;
+  border-radius: 8px;
+  background: #F5F3FF;
+  border-left: 4px solid #8B5CF6;
+}
+
+.restock-suggestion-item.critical {
+  background: #FEF2F2;
+  border-left-color: #EF4444;
+}
+
+.restock-suggestion-item.important {
+  background: #FFFBEB;
+  border-left-color: #F59E0B;
+}
+
+.restock-suggestion-item.normal {
+  background: #EFF6FF;
+  border-left-color: #3B82F6;
+}
+</style>

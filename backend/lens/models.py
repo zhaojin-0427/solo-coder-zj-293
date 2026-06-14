@@ -1,4 +1,5 @@
 from django.db import models
+from django.db.models import Sum, Avg
 from django.utils import timezone
 from datetime import timedelta
 
@@ -67,6 +68,29 @@ class Lens(models.Model):
     next_checkup_date = models.DateField('下次眼科复查日期', null=True, blank=True)
     need_rest_observation = models.BooleanField('是否需要停戴观察', default=False)
     rest_until_date = models.DateField('停戴至日期', null=True, blank=True)
+
+    USAGE_FREQUENCY_CHOICES = [
+        ('frequent', '常用'),
+        ('occasional', '偶尔'),
+        ('rare', '很少'),
+    ]
+    RESTOCK_PRIORITY_CHOICES = [
+        ('high', '高优先级'),
+        ('medium', '中优先级'),
+        ('low', '低优先级'),
+    ]
+
+    purchase_channel = models.CharField('购买渠道', max_length=100, blank=True, default='')
+    unit_price = models.DecimalField('单价(元)', max_digits=10, decimal_places=2, default=0.00)
+    discount = models.DecimalField('折扣(%)', max_digits=5, decimal_places=2, default=100.00)
+    shipping_fee = models.DecimalField('运费(元)', max_digits=10, decimal_places=2, default=0.00)
+    total_paid = models.DecimalField('实付金额(元)', max_digits=10, decimal_places=2, default=0.00)
+    stock_quantity = models.IntegerField('库存数量(片)', default=2)
+    usage_frequency = models.CharField('常用程度', max_length=20, choices=USAGE_FREQUENCY_CHOICES, default='occasional')
+    planned_restock_date = models.DateField('计划补货日期', null=True, blank=True)
+    restock_priority = models.CharField('补货优先级', max_length=20, choices=RESTOCK_PRIORITY_CHOICES, default='medium')
+    budget_month = models.CharField('预算月份', max_length=7, blank=True, default='')
+    restock_notes = models.TextField('补货备注', blank=True, default='')
 
     class Meta:
         db_table = 'lens'
@@ -141,6 +165,84 @@ class Lens(models.Model):
         if days_checkup is not None and days_checkup <= 7:
             return 'checkup_soon'
         return 'normal'
+
+    def get_remaining_stock(self):
+        used_count = self.used_count or 0
+        return max(0, self.stock_quantity - used_count)
+
+    def get_monthly_usage_rate(self):
+        today = timezone.now().date()
+        ninety_days_ago = today - timedelta(days=90)
+        records = self.wear_records.filter(wear_date__gte=ninety_days_ago)
+        total_used = records.count()
+        if total_used == 0:
+            return 0
+        return round(total_used / 3.0, 1)
+
+    def get_estimated_days_left(self):
+        remaining = self.get_remaining_stock()
+        monthly_rate = self.get_monthly_usage_rate()
+        if monthly_rate <= 0:
+            return None
+        daily_rate = monthly_rate / 30.0
+        return round(remaining / daily_rate) if daily_rate > 0 else None
+
+    def get_total_spent(self):
+        total = self.purchase_records.aggregate(Sum('actual_paid'))['actual_paid__sum'] or 0
+        return float(total)
+
+    def get_days_since_last_wear(self):
+        last_record = self.wear_records.order_by('-wear_date').first()
+        if not last_record:
+            return (timezone.now().date() - self.created_at.date()).days
+        return (timezone.now().date() - last_record.wear_date).days
+
+    def get_restock_status(self):
+        today = timezone.now().date()
+        remaining = self.get_remaining_stock()
+        estimated_days = self.get_estimated_days_left()
+        days_until_expiry = self.days_until_expiry()
+
+        if self.status == 'used_up':
+            return {'status': 'used_up', 'label': '已用完', 'class': 'tag-gray'}
+
+        if self.is_expired():
+            return {'status': 'expired', 'label': '已过期', 'class': 'tag-red'}
+
+        if remaining <= 0:
+            return {'status': 'out_of_stock', 'label': '已无库存', 'class': 'tag-red'}
+
+        if estimated_days is not None and estimated_days <= 7:
+            return {'status': 'urgent', 'label': f'库存紧急(剩{estimated_days}天)', 'class': 'tag-red'}
+
+        if remaining <= 2:
+            return {'status': 'low', 'label': f'库存不足(剩{remaining}片)', 'class': 'tag-yellow'}
+
+        if days_until_expiry <= 30 and remaining > 0:
+            return {'status': 'expiring_with_stock', 'label': f'临期有库存(剩{days_until_expiry}天)', 'class': 'tag-yellow'}
+
+        if self.planned_restock_date and (self.planned_restock_date - today).days <= 7:
+            return {'status': 'planned_soon', 'label': '计划补货中', 'class': 'tag-blue'}
+
+        return {'status': 'normal', 'label': f'库存充足(剩{remaining}片)', 'class': 'tag-green'}
+
+    def get_avg_comfort_level(self):
+        avg = self.wear_records.aggregate(Avg('comfort_level'))['comfort_level__avg']
+        return round(avg, 1) if avg else None
+
+    def is_low_comfort_high_cost(self):
+        avg_comfort = self.get_avg_comfort_level()
+        total_spent = self.get_total_spent()
+        if avg_comfort is None:
+            return False
+        return avg_comfort <= 2 and total_spent > 0
+
+    def get_cost_per_wear(self):
+        total_spent = self.get_total_spent()
+        total_wears = self.wear_records.count()
+        if total_wears == 0 or total_spent == 0:
+            return None
+        return round(total_spent / total_wears, 2)
 
 
 class WearRecord(models.Model):
@@ -391,3 +493,105 @@ class OutfitPlan(models.Model):
         if not self.wear_record:
             return None
         return self.wear_record.comfort_level - self.match_score
+
+
+class PurchaseRecord(models.Model):
+    CHANNEL_CHOICES = [
+        ('taobao', '淘宝'),
+        ('tmall', '天猫'),
+        ('jd', '京东'),
+        ('pdd', '拼多多'),
+        ('xiaohongshu', '小红书'),
+        ('offline', '线下实体店'),
+        ('other', '其他渠道'),
+    ]
+
+    PAYMENT_STATUS_CHOICES = [
+        ('pending', '待付款'),
+        ('paid', '已付款'),
+        ('refunded', '已退款'),
+    ]
+
+    lens = models.ForeignKey(Lens, on_delete=models.CASCADE, related_name='purchase_records', verbose_name='关联镜片')
+    purchase_date = models.DateField('采购日期')
+    purchase_channel = models.CharField('购买渠道', max_length=50, choices=CHANNEL_CHOICES, default='taobao')
+    custom_channel = models.CharField('自定义渠道', max_length=100, blank=True, default='')
+    quantity = models.IntegerField('采购数量(片)', default=2)
+    unit_price = models.DecimalField('单价(元)', max_digits=10, decimal_places=2, default=0.00)
+    discount = models.DecimalField('折扣(%)', max_digits=5, decimal_places=2, default=100.00)
+    shipping_fee = models.DecimalField('运费(元)', max_digits=10, decimal_places=2, default=0.00)
+    coupon_amount = models.DecimalField('优惠券金额(元)', max_digits=10, decimal_places=2, default=0.00)
+    total_amount = models.DecimalField('商品总额(元)', max_digits=10, decimal_places=2, default=0.00)
+    actual_paid = models.DecimalField('实付金额(元)', max_digits=10, decimal_places=2, default=0.00)
+    payment_status = models.CharField('付款状态', max_length=20, choices=PAYMENT_STATUS_CHOICES, default='paid')
+    order_number = models.CharField('订单号', max_length=100, blank=True, default='')
+    budget_month = models.CharField('预算月份', max_length=7, blank=True, default='')
+    notes = models.TextField('备注', blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'purchase_record'
+        ordering = ['-purchase_date', '-created_at']
+        verbose_name = '采购记录'
+        verbose_name_plural = verbose_name
+
+    def __str__(self):
+        return f'{self.lens.brand if self.lens else "Unknown"} - {self.get_purchase_channel_display()} - {self.purchase_date}'
+
+    def get_channel_display_name(self):
+        return self.custom_channel or self.get_purchase_channel_display()
+
+    def calculate_total(self):
+        discount_multiplier = float(self.discount) / 100.0 if self.discount else 1.0
+        self.total_amount = float(self.unit_price) * int(self.quantity) * discount_multiplier
+        self.actual_paid = self.total_amount + float(self.shipping_fee) - float(self.coupon_amount)
+        return self.actual_paid
+
+    def save(self, *args, **kwargs):
+        if not self.budget_month and self.purchase_date:
+            self.budget_month = self.purchase_date.strftime('%Y-%m')
+        self.calculate_total()
+        super().save(*args, **kwargs)
+
+
+class RestockSuggestion(models.Model):
+    SUGGESTION_TYPE_CHOICES = [
+        ('low_stock', '库存不足'),
+        ('expiring_soon', '即将过期'),
+        ('high_usage', '高频使用'),
+        ('long_unused', '长期未用'),
+        ('low_comfort', '低舒适度'),
+        ('planned', '计划补货'),
+        ('seasonal', '季节性补货'),
+    ]
+
+    SEVERITY_CHOICES = [
+        ('critical', '紧急'),
+        ('important', '重要'),
+        ('normal', '常规'),
+    ]
+
+    lens = models.ForeignKey(Lens, on_delete=models.CASCADE, related_name='restock_suggestions', verbose_name='关联镜片')
+    suggestion_type = models.CharField('建议类型', max_length=30, choices=SUGGESTION_TYPE_CHOICES)
+    severity = models.CharField('严重程度', max_length=20, choices=SEVERITY_CHOICES, default='normal')
+    title = models.CharField('标题', max_length=200)
+    message = models.TextField('建议内容')
+    current_stock = models.IntegerField('当前库存', default=0)
+    estimated_days_left = models.IntegerField('预计可用天数', null=True, blank=True)
+    suggested_quantity = models.IntegerField('建议补货数量', default=2)
+    suggested_date = models.DateField('建议补货日期', null=True, blank=True)
+    is_action_taken = models.BooleanField('是否已处理', default=False)
+    is_dismissed = models.BooleanField('是否已忽略', default=False)
+    triggered_at = models.DateTimeField('触发时间', auto_now_add=True)
+    action_taken_at = models.DateTimeField('处理时间', null=True, blank=True)
+    action_notes = models.TextField('处理备注', blank=True, default='')
+
+    class Meta:
+        db_table = 'restock_suggestion'
+        ordering = ['-severity', '-triggered_at']
+        verbose_name = '补货建议'
+        verbose_name_plural = verbose_name
+
+    def __str__(self):
+        return f'[{self.get_severity_display()}] {self.title}'

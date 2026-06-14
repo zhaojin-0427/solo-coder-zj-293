@@ -42,6 +42,12 @@ const routes = [
     name: 'OutfitPlans',
     component: () => import('@/views/OutfitPlans.vue'),
     meta: { title: '妆容搭配计划' }
+  },
+  {
+    path: '/budget',
+    name: 'BudgetRestock',
+    component: () => import('@/views/BudgetRestock.vue'),
+    meta: { title: '预算与补货管理' }
   }
 ]
 
